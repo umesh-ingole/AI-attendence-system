@@ -9,3 +9,4 @@ numpy<2.0.0
 setuptools
 streamlit-webrtc>=0.47.1
 av>=10.0.0
+tornado<6.4
