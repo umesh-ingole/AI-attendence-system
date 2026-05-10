@@ -3959,7 +3959,17 @@ def show_ai_live_attendance_page():
                     key="attendance_webrtc",
                     mode=WebRtcMode.SENDRECV,
                     rtc_configuration=RTCConfiguration(
-                        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+                        {
+                            "iceServers": [
+                                {"urls": ["stun:stun.l.google.com:19302"]},
+                                {"urls": ["stun:stun1.l.google.com:19302"]},
+                                {"urls": ["stun:stun2.l.google.com:19302"]},
+                                {"urls": ["stun:stun3.l.google.com:19302"]},
+                                {"urls": ["stun:stun4.l.google.com:19302"]},
+                                {"urls": ["stun:stun.cloudflare.com:3478"]},
+                                {"urls": ["stun:stun.services.mozilla.com"]},
+                            ]
+                        }
                     ),
                     video_frame_callback=callback,
                     media_stream_constraints={"video": True, "audio": False},
