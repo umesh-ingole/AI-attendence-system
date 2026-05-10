@@ -69,14 +69,14 @@ class RealTimeFaceRecognitionEngine:
     
     def __init__(self, 
                  embeddings_path: str = "data/face_embeddings.pkl",
-                 similarity_threshold: float = 0.40,
+                 similarity_threshold: float = 0.55,
                  recognition_cooldown: int = 10):
         """
         Initialize the face recognition engine.
         
         Args:
             embeddings_path: Path to pickled face embeddings dictionary
-            similarity_threshold: Minimum cosine similarity for recognition (default: 0.40)
+            similarity_threshold: Minimum cosine similarity for recognition (default: 0.55)
             recognition_cooldown: Cooldown period in seconds between recognitions (default: 10s)
         
         Raises:
@@ -139,10 +139,15 @@ class RealTimeFaceRecognitionEngine:
         # Cooldown tracking to prevent repeated recognition spam
         self.last_recognized_times = defaultdict(lambda: datetime.min)
         
+        # Dwell tracking for intentional scanning
+        self.dwell_tracker = defaultdict(dict)
+        self.dwell_threshold = 1.5 # seconds required to face camera
+        
         # Performance metrics
         self.frame_count = 0
         self.start_time = time.time()
         self.fps = 0.0
+        self.allowed_roll_nos = None
         
         logger.info(f"Configuration: threshold={self.similarity_threshold}, cooldown={self.recognition_cooldown}s")
         logger.info("=" * 60)
@@ -199,6 +204,15 @@ class RealTimeFaceRecognitionEngine:
         except Exception as e:
             raise ValueError(f"Error loading embeddings: {e}")
     
+    def reload_embeddings(self) -> None:
+        """Dynamically reload embeddings without restarting the engine."""
+        logger.info("Reloading embeddings dynamically...")
+        try:
+            self.known_faces = self._load_known_embeddings()
+            logger.info(f"✓ Reloaded {len(self.known_faces)} student embeddings")
+        except Exception as e:
+            logger.error(f"✗ Failed to reload embeddings: {e}")
+
     def match_face(self, face_embedding: np.ndarray) -> dict:
         """
         Match detected face against known embeddings using cosine similarity.
@@ -596,33 +610,54 @@ class RealTimeFaceRecognitionEngine:
                             
                             if match:
                                 self.last_detected_student = match
-                                self.last_detected_time = time.time()
-                                # Check if student should be recognized (cooldown)
-                                if self._should_recognize(match['roll_no']):
-                                    recognition_results[idx] = match
-                                    
-                                    # Log recognition event
-                                    logger.info(
-                                        f"[RECOGNIZED] Name: {match['name']} | "
-                                        f"Roll: {match['roll_no']} | "
-                                        f"Similarity: {match['similarity']:.4f} | "
-                                        f"Time: {datetime.now().strftime('%H:%M:%S')}"
-                                    )
-
-                                    # Process Attendance Event
-                                    if self.attendance_engine:
-                                        try:
-                                            self.attendance_engine.process_recognition_event(
-                                                roll_no=match['roll_no'],
-                                                name=match['name']
-                                            )
-                                            self.feedback_text = "✓ Attendance Logged"
-                                            self.feedback_expiry = time.time() + 2.0
-                                        except Exception as e:
-                                            logger.error(f"[ERROR] Attendance processing failed: {e}")
+                                current_t = time.time()
+                                self.last_detected_time = current_t
+                                roll_no = match['roll_no']
+                                
+                                # Intentional Dwell Time Logic
+                                if roll_no not in self.dwell_tracker:
+                                    self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
                                 else:
-                                    # In cooldown but still show on display
-                                    recognition_results[idx] = match
+                                    # If face lost for > 2 seconds, reset dwell time
+                                    if current_t - self.dwell_tracker[roll_no]['last_seen'] > 2.0:
+                                        self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
+                                    else:
+                                        self.dwell_tracker[roll_no]['last_seen'] = current_t
+                                
+                                dwell_time = current_t - self.dwell_tracker[roll_no]['first_seen']
+                                
+                                # Always show on display if matched
+                                recognition_results[idx] = match
+                                
+                                # Check if student should be recognized (Dwell met + cooldown)
+                                if dwell_time >= self.dwell_threshold:
+                                    if self._should_recognize(roll_no):
+                                        # Log recognition event
+                                        logger.info(
+                                            f"[RECOGNIZED] Name: {match['name']} | "
+                                            f"Roll: {match['roll_no']} | "
+                                            f"Similarity: {match['similarity']:.4f} | "
+                                            f"Dwell: {dwell_time:.1f}s | "
+                                            f"Time: {datetime.now().strftime('%H:%M:%S')}"
+                                        )
+
+                                        # Process Attendance Event
+                                        if self.attendance_engine:
+                                            # Strict Coordination: Only allow students from the active timetable's Class/Branch
+                                            if self.allowed_roll_nos is not None and match['roll_no'] not in self.allowed_roll_nos:
+                                                logger.info(f"[IGNORED] {match['name']} ({match['roll_no']}) does not belong to the active Timetable Class/Branch.")
+                                                self.feedback_text = "⚠ Wrong Class/Branch"
+                                                self.feedback_expiry = time.time() + 2.0
+                                            else:
+                                                try:
+                                                    self.attendance_engine.process_recognition_event(
+                                                        roll_no=match['roll_no'],
+                                                        name=match['name']
+                                                    )
+                                                    self.feedback_text = "✓ Attendance Logged"
+                                                    self.feedback_expiry = time.time() + 2.0
+                                                except Exception as e:
+                                                    logger.error(f"[ERROR] Attendance processing failed: {e}")
                             
                         except Exception as e:
                             logger.debug(f"Error processing face {idx}: {e}")

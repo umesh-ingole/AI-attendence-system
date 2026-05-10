@@ -22,7 +22,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 st.set_page_config(
     page_title="AttendAI — Next-Gen AI Attendance Portal",
-    page_icon="",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -440,53 +440,22 @@ st.markdown("""
             box-shadow: 0 0 12px rgba(79,158,255,0.35) !important;
             transform: none !important;
         }
-        /* --- CAMERA INPUT: full dark redesign --- */
-        [data-testid="stCameraInput"] {
-            background: rgba(15, 20, 40, 0.6) !important;
-            border-radius: 12px !important;
-            padding: 4px !important;
-        }
-        [data-testid="stCameraInput"] label p {
-            color: #94a3b8 !important;
-            font-weight: 600 !important;
-            font-size: 13px !important;
-        }
-        /* Camera video frame */
-        [data-testid="stCameraInput"] video {
-            border-radius: 10px !important;
-            border: 1px solid rgba(167,139,250,0.3) !important;
-            background: #0a0e1a !important;
-        }
-        /* Wrapper around video+button */
-        [data-testid="stCameraInput"] > div {
-            background: rgba(15, 20, 40, 0.85) !important;
+        /* --- CAMERA INPUT: dark redesign --- */
+        [data-testid="stCameraInput"] > div:first-child {
+            background: rgba(15, 20, 40, 0.8) !important;
             border: 1px dashed rgba(167,139,250,0.45) !important;
             border-radius: 10px !important;
-            overflow: hidden !important;
         }
-        /* ALL buttons inside camera input (Take Photo, Retake) */
-        [data-testid="stCameraInput"] button,
         [data-testid="stCameraInputButton"] button {
-            background: rgba(30, 20, 60, 0.95) !important;
-            background-image: none !important;
-            border: 1px solid rgba(167,139,250,0.55) !important;
+            background: rgba(30, 20, 60, 0.9) !important;
+            border: 1px solid rgba(167,139,250,0.5) !important;
             border-radius: 8px !important;
             color: #c4b5fd !important;
             font-size: 13px !important;
             font-weight: 600 !important;
-            padding: 7px 20px !important;
-            cursor: pointer !important;
-            box-shadow: 0 0 10px rgba(167,139,250,0.15) !important;
-            transition: all 0.2s ease !important;
-            transform: none !important;
-            letter-spacing: 0.02em !important;
-        }
-        [data-testid="stCameraInput"] button:hover,
-        [data-testid="stCameraInputButton"] button:hover {
-            background: rgba(167,139,250,0.18) !important;
-            border-color: rgba(167,139,250,0.9) !important;
-            color: #ffffff !important;
-            box-shadow: 0 0 14px rgba(167,139,250,0.35) !important;
+            padding: 5px 16px !important;
+            box-shadow: 0 0 8px rgba(167,139,250,0.15) !important;
+            background-image: none !important;
             transform: none !important;
         }
     </style>
@@ -632,88 +601,30 @@ def load_data():
         # Migrate old attendance format to new format if needed
         migrate_attendance_to_new_format()
     except Exception as e:
-        st.error(f" Error loading data: {str(e)}")
+        st.error(f"❌ Error loading data: {str(e)}")
 
 
 def save_data():
-    """Save session state data to JSON file with base64-encoded images.
-    
-    MERGE-FIRST STRATEGY: Always read what the AI engine has independently
-    written to disk before saving, so we never erase AI-logged attendance.
-    The UI session_state is authoritative for student/timetable metadata,
-    but AI attendance records written by the engine take precedence for
-    any student not already present in session_state for that period slot.
-    """
+    """Save session state data to JSON file with base64-encoded images."""
     try:
-        # ── Step 1: Read current on-disk period_attendance (AI may have written it) ──
-        existing_period_attendance = []
-        if os.path.exists(DATA_FILE):
-            try:
-                with open(DATA_FILE, 'r') as _rf:
-                    _existing = json.load(_rf)
-                existing_period_attendance = _existing.get("period_attendance", [])
-            except Exception:
-                existing_period_attendance = []
-
-        # ── Step 2: Build lookup dicts keyed by (date, period, subject) ──
-        disk_index = {}
-        for rec in existing_period_attendance:
-            key = (rec.get("date"), rec.get("period"), rec.get("subject"))
-            disk_index[key] = rec
-
-        session_index = {}
-        for rec in st.session_state.period_attendance:
-            key = (rec.get("date"), rec.get("period"), rec.get("subject"))
-            session_index[key] = rec
-
-        # ── Step 3: Merge — session has priority for metadata; disk fills in
-        # any student statuses the session doesn't know about (AI-written) ──
-        merged_attendance = []
-        all_keys = set(disk_index.keys()) | set(session_index.keys())
-        for key in all_keys:
-            if key in session_index:
-                sess_rec = session_index[key]
-                if key in disk_index:
-                    disk_att = disk_index[key].get("attendance", {})
-                    sess_att = sess_rec.setdefault("attendance", {})
-                    for roll, status in disk_att.items():
-                        # Only fill in if session doesn't already have a status,
-                        # or if the disk status is a "better" status (e.g. Exited)
-                        if roll not in sess_att:
-                            sess_att[roll] = status
-                        elif status in ["Exited", "Present (Excused)", "Auto-Carried"] and sess_att[roll] in ["Absent"]:
-                            sess_att[roll] = status
-                merged_attendance.append(sess_rec)
-            else:
-                # Only on disk (pure AI record) — keep as-is
-                merged_attendance.append(disk_index[key])
-
-        # ── Step 4: Update session_state so UI reflects merged state ──
-        st.session_state.period_attendance = merged_attendance
-
         data_to_save = {
             "students": [],
-            "period_attendance": merged_attendance,
+            "period_attendance": st.session_state.period_attendance,
             "timetable": st.session_state.timetable
         }
-
+        
         # Convert student photos to base64 before saving
         for student in st.session_state.students:
             student_copy = student.copy()
             if student_copy.get("photo"):
                 student_copy["photo"] = convert_bytes_to_base64(student_copy["photo"])
             data_to_save["students"].append(student_copy)
-
-        # Write to JSON file with retries to avoid race condition
-        for _ in range(5):
-            try:
-                with open(DATA_FILE, 'w') as f:
-                    json.dump(data_to_save, f, indent=2)
-                break
-            except Exception:
-                time.sleep(0.1)
+        
+        # Write to JSON file
+        with open(DATA_FILE, 'w') as f:
+            json.dump(data_to_save, f, indent=2)
     except Exception as e:
-        st.error(f" Error saving data: {str(e)}")
+        st.error(f"❌ Error saving data: {str(e)}")
 
 
 # ============================================================================
@@ -836,80 +747,17 @@ def get_student_by_prn(prn):
     return None
 
 
-def delete_student_assets(roll_no):
-    """Clean up student dataset folders, embeddings, and reload recognition engine."""
-    import os
-    import shutil
-    import pickle
-    
-    # 1. Clean dataset folder
-    dataset_path = "dataset"
-    if os.path.exists(dataset_path):
-        try:
-            for folder in os.listdir(dataset_path):
-                if folder.startswith(f"{roll_no}_") or folder == str(roll_no):
-                    shutil.rmtree(os.path.join(dataset_path, folder))
-        except Exception as e:
-            pass
-            
-    # 2. Clean face_embeddings.pkl
-    pkl_path = "data/face_embeddings.pkl"
-    if os.path.exists(pkl_path):
-        try:
-            with open(pkl_path, 'rb') as f:
-                emb = pickle.load(f)
-            if str(roll_no) in emb:
-                del emb[str(roll_no)]
-                with open(pkl_path, 'wb') as f:
-                    pickle.dump(emb, f)
-        except Exception as e:
-            pass
-            
-    # 3. Regenerate face embeddings to make sure face_embeddings.pkl is 100% in sync
-    try:
-        from vision.generate_embeddings import generate_face_embeddings
-        generate_face_embeddings(verbose=False)
-    except Exception as e:
-        pass
-        
-    # 4. Hot-reload embeddings in live recognition engine if running
-    try:
-        existing_engine = st.session_state.get('recognition_engine')
-        if existing_engine is not None and st.session_state.get('recognition_running', False):
-            existing_engine.reload_embeddings()
-    except Exception as e:
-        pass
-
-
 def check_overlapping_periods(day, new_start, new_end):
     """Check if new period overlaps with existing periods on the day."""
     periods = st.session_state.timetable.get(day, [])
-    
-    def parse_time(t_str):
-        try:
-            return datetime.strptime(t_str.strip(), "%H:%M").time()
-        except ValueError:
-            return t_str.strip()
-
-    try:
-        ns = parse_time(new_start)
-        ne = parse_time(new_end)
-    except:
-        ns, ne = new_start.strip(), new_end.strip()
-
     for period in periods:
-        es = parse_time(period.get("start_time", ""))
-        ee = parse_time(period.get("end_time", ""))
+        existing_start = period.get("start_time")
+        existing_end = period.get("end_time")
         
-        try:
-            if not (ne <= es or ns >= ee):
-                return True
-        except TypeError:
-            # Fallback to string comparison if format was weird
-            if not (str(ne) <= str(es) or str(ns) >= str(ee)):
-                return True
-                
-    return False
+        # Simple string comparison for time (works for HH:MM format)
+        if not (new_end <= existing_start or new_start >= existing_end):
+            return True  # Overlap found
+    return False  # No overlap
 
 
 def is_break_period(day, start_time):
@@ -1348,7 +1196,7 @@ def export_student_report_to_excel(student_roll):
         return output.getvalue()
         
     except Exception as e:
-        st.error(f" Error generating Excel report: {str(e)}")
+        st.error(f"❌ Error generating Excel report: {str(e)}")
         return None
 
 
@@ -1539,7 +1387,7 @@ def get_monthly_attendance_report():
         }
         
     except Exception as e:
-        st.error(f" Error generating monthly attendance report: {str(e)}")
+        st.error(f"❌ Error generating monthly attendance report: {str(e)}")
         return {
             "rows": [],
             "subject_columns": []
@@ -1634,7 +1482,7 @@ def get_monthly_student_matrix_report(month=None):
         }
         
     except Exception as e:
-        st.error(f" Error generating matrix report: {str(e)}")
+        st.error(f"❌ Error generating matrix report: {str(e)}")
         return {
             "data": pd.DataFrame(),
             "summary": {
@@ -1715,39 +1563,12 @@ def show_dashboard():
         <div class="animated-header">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                 <div>
-                    <h1 style="margin: 0; font-size: 32px;"><span class="gradient-text"> AI Attendance Dashboard</span></h1>
+                    <h1 style="margin: 0; font-size: 32px;"><span class="gradient-text">📊 AI Attendance Dashboard</span></h1>
                     <p style="margin: 5px 0 0 0; color: rgba(255,255,255,0.6); font-size: 16px;">Smart College Attendance & Timetable Analytics</p>
                 </div>
                 <div style="text-align: right; background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
-                    <span style="font-size: 14px; color: #10b981; font-weight: 600; display: block;"> LIVE SYSTEM TIME</span>
+                    <span style="font-size: 14px; color: #10b981; font-weight: 600; display: block;">🕒 LIVE SYSTEM TIME</span>
                     <span style="font-size: 20px; font-weight: 700; color: #fff;">{today_str} • {current_time_str}</span>
-                </div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # 1.5 System Rules & Instructions
-    st.markdown("""
-        <div class="animated-card" style="border-left: 4px solid #3b82f6 !important; margin-bottom: 24px;">
-            <h3 style="margin-top:0; color:#3b82f6; font-size:18px;">⚖️ System Rules & Instructions</h3>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
-                <div style="flex:1; min-width:300px;">
-                    <h4 style="color:#94a3b8; font-size:14px; margin-bottom:8px;">👨‍🏫 FOR TEACHERS</h4>
-                    <ul style="color:#cbd5e1; font-size:13px; line-height:1.6; padding-left:20px; margin:0;">
-                        <li><b>Start Camera on Time:</b> Ensure the "Real-Time Face Recognition" is running before the period begins.</li>
-                        <li><b>Verify Auto-Carries:</b> If a student stays for a consecutive period, verify their presence in the Live Camera tab to mark them "Present".</li>
-                        <li><b>Confirm Exits:</b> If a student leaves mid-class, confirm their exit in the UI to log their Exit Time.</li>
-                        <li><b>Gatepass Approvals:</b> Manage digital gatepasses for late students so they are marked "Excused" instead of "Late".</li>
-                    </ul>
-                </div>
-                <div style="flex:1; min-width:300px;">
-                    <h4 style="color:#94a3b8; font-size:14px; margin-bottom:8px;">🎓 FOR STUDENTS</h4>
-                    <ul style="color:#cbd5e1; font-size:13px; line-height:1.6; padding-left:20px; margin:0;">
-                        <li><b>Dwell Time (1.5s):</b> You must look directly at the camera for at least 1.5 seconds to register your attendance.</li>
-                        <li><b>Late Grace Period:</b> Arriving more than 10 minutes after the scheduled start time will mark you as "Late" (unless excused).</li>
-                        <li><b>Continuous Presence:</b> Exiting the room for more than 15 seconds will trigger an Exit confirmation. Do not leave the room unexcused.</li>
-                        <li><b>Smart Auto-Carry:</b> If you stay for consecutive periods, the camera will automatically carry your attendance over.</li>
-                    </ul>
                 </div>
             </div>
         </div>
@@ -1767,21 +1588,21 @@ def show_dashboard():
     with col2:
         st.markdown(f"""
             <div class="animated-card" style="text-align: center; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%); border-color: rgba(16, 185, 129, 0.2);">
-                <span style="font-size: 13px; color: #10b981; font-weight:600; display:block; margin-bottom:5px;"> PRESENT TODAY</span>
+                <span style="font-size: 13px; color: #10b981; font-weight:600; display:block; margin-bottom:5px;">✅ PRESENT TODAY</span>
                 <span style="font-size: 36px; font-weight: 800; color: #10b981;">{stats['present']}</span>
             </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
             <div class="animated-card" style="text-align: center; background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%); border-color: rgba(239, 68, 68, 0.2);">
-                <span style="font-size: 13px; color: #ef4444; font-weight:600; display:block; margin-bottom:5px;"> ABSENT TODAY</span>
+                <span style="font-size: 13px; color: #ef4444; font-weight:600; display:block; margin-bottom:5px;">❌ ABSENT TODAY</span>
                 <span style="font-size: 36px; font-weight: 800; color: #ef4444;">{stats['absent']}</span>
             </div>
         """, unsafe_allow_html=True)
     with col4:
         st.markdown(f"""
             <div class="animated-card" style="text-align: center; background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(15, 23, 42, 0.9) 100%); border-color: rgba(59, 130, 246, 0.2);">
-                <span style="font-size: 13px; color: #3b82f6; font-weight:600; display:block; margin-bottom:5px;"> ATTENDANCE RATE</span>
+                <span style="font-size: 13px; color: #3b82f6; font-weight:600; display:block; margin-bottom:5px;">📈 ATTENDANCE RATE</span>
                 <span style="font-size: 36px; font-weight: 800; color: #3b82f6;">{stats['rate']:.1f}%</span>
             </div>
         """, unsafe_allow_html=True)
@@ -1789,7 +1610,7 @@ def show_dashboard():
     st.markdown("---")
     
     # 3. Dynamic Current Day Timetable Timeline
-    st.markdown("###  Timetable & Schedule Search")
+    st.markdown("### 📅 Timetable & Schedule Search")
     
     # Check if today's classes are finished to automatically roll over to next day's timetable
     now_dt = datetime.now()
@@ -1816,7 +1637,7 @@ def show_dashboard():
             pass
             
     search_date = st.date_input(
-        " Search Timetable by Date",
+        "🔍 Search Timetable by Date",
         default_date,
         key="dash_timetable_search_date"
     )
@@ -1824,17 +1645,17 @@ def show_dashboard():
     search_day_name = search_date.strftime("%A")
     
     if was_rolled_over and search_date.strftime("%Y-%m-%d") == (now_dt + timedelta(days=1)).strftime("%Y-%m-%d"):
-        st.success(f" Today's classes are finished! Automatically showing **tomorrow's timetable** to keep you ahead.")
+        st.success(f"🌅 Today's classes are finished! Automatically showing **tomorrow's timetable** to keep you ahead.")
     
     if search_date_str in st.session_state.timetable:
         today_periods = st.session_state.timetable[search_date_str]
-        st.info(f" **Custom Date-Specific Schedule** active for **{search_date_str}** ({search_day_name})!")
+        st.info(f"✨ **Custom Date-Specific Schedule** active for **{search_date_str}** ({search_day_name})!")
     else:
         today_periods = st.session_state.timetable.get(search_day_name, [])
-        st.info(f" Showing standard timetable schedule for **{search_day_name}**, **{search_date_str}**")
+        st.info(f"📅 Showing standard timetable schedule for **{search_day_name}**, **{search_date_str}**")
     
     if not today_periods:
-        st.info(f" No classes scheduled for {search_day_name}, {search_date_str}. Enjoy your day off!")
+        st.info(f"🏖️ No classes scheduled for {search_day_name}, {search_date_str}. Enjoy your day off!")
     else:
         # Display periods in a beautiful custom timeline
         for idx, p in enumerate(today_periods):
@@ -1870,7 +1691,7 @@ def show_dashboard():
                         </div>
                     </div>
                     <div style="text-align: right;">
-                        <span style="font-size: 16px; font-weight: 700; color: #10b981; display: block;"> {start_time} - {end_time}</span>
+                        <span style="font-size: 16px; font-weight: 700; color: #10b981; display: block;">🕒 {start_time} - {end_time}</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -1878,15 +1699,15 @@ def show_dashboard():
     st.markdown("---")
     
     # 4. Searchable & Filterable Student Directory with Full Metadata
-    st.markdown("###  Registered Students Directory")
+    st.markdown("### 👥 Registered Students Directory")
     
     if not st.session_state.students:
-        st.warning(" No students registered in the college database yet. Go to 'Manage Students' to register students.")
+        st.warning("⚠️ No students registered in the college database yet. Go to 'Manage Students' to register students.")
     else:
         # Create Search & Filter Controls
         filter_col1, filter_col2 = st.columns([3, 1])
         with filter_col1:
-            search_query = st.text_input(" Search Students", placeholder="Search by name, roll number, or PRN...", key="search_query")
+            search_query = st.text_input("🔍 Search Students", placeholder="Search by name, roll number, or PRN...", key="search_query")
         with filter_col2:
             unique_branches = sorted(list(set(student.get("branch", "Other") for student in st.session_state.students)))
             branch_filter = st.selectbox("Branch Filter", ["All Branches"] + unique_branches)
@@ -1930,7 +1751,7 @@ def show_dashboard():
                     <div class="animated-card" style="margin-bottom: 12px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                             <div style="display: flex; align-items: center; gap: 15px;">
-                                <div style="font-size: 32px; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 50%; min-width: 48px; text-align: center;"></div>
+                                <div style="font-size: 32px; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 50%; min-width: 48px; text-align: center;">👤</div>
                                 <div>
                                     <h4 style="margin: 0; font-size: 18px; font-weight: 700; color: #fff;">{name}</h4>
                                     <span style="font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 500;">Roll No: <span style="background:rgba(79,158,255,0.15); color:#7dd3fc; padding:1px 7px; border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; border:1px solid rgba(79,158,255,0.25);">{roll_no}</span> &nbsp;•&nbsp; PRN: <span style="background:rgba(79,158,255,0.15); color:#7dd3fc; padding:1px 7px; border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; border:1px solid rgba(79,158,255,0.25);">{prn}</span></span>
@@ -1958,13 +1779,13 @@ def show_dashboard():
 
 def show_add_student():
     """Add Student page - Collect student details and add to session state."""
-    st.title(" Add Student")
+    st.title("➕ Add Student")
     
     st.write("Add new students to the college system. Each student must have unique roll number and PRN.")
     st.markdown("---")
     
     # ===== STUDENT DETAILS SECTION =====
-    st.subheader(" Student Details")
+    st.subheader("👤 Student Details")
     col1, col2 = st.columns(2)
     
     with col1:
@@ -1995,7 +1816,7 @@ def show_add_student():
         st.text("")
     
     # ===== ACADEMIC DETAILS SECTION =====
-    st.subheader(" Academic Details")
+    st.subheader("📚 Academic Details")
     col5, col6 = st.columns(2)
     
     with col5:
@@ -2013,7 +1834,7 @@ def show_add_student():
         )
     
     # ===== PHOTO UPLOAD SECTION =====
-    st.subheader(" Photo Upload")
+    st.subheader("📷 Photo Upload")
     uploaded_file = st.file_uploader(
         "Upload Student Photo (Optional)",
         type=["jpg", "jpeg", "png"],
@@ -2026,25 +1847,18 @@ def show_add_student():
         if isinstance(photo_bytes, bytes):
             st.image(photo_bytes, width=150, caption="Uploaded Photo")
         else:
-            st.warning(" Old image format not supported. Please re-upload.")
+            st.warning("⚠️ Old image format not supported. Please re-upload.")
     
     # Validation and Add button
     st.markdown("---")
-    if st.button(" Add Student", key="btn_add_student"):
-        # Strip trailing and leading whitespaces for clean data
-        student_name = student_name.strip() if student_name else ""
-        roll_number = roll_number.strip() if roll_number else ""
-        prn = prn.strip() if prn else ""
-        branch = branch.strip() if branch else ""
-        class_name = class_name.strip() if class_name else ""
-        
+    if st.button("➕ Add Student", key="btn_add_student"):
         # Validation
         if not student_name or not roll_number or not prn or not branch or not class_name:
-            st.error(" Please fill in all required fields (Name, Roll, PRN, Branch, Class)")
+            st.error("❌ Please fill in all required fields (Name, Roll, PRN, Branch, Class)")
         elif get_student_by_roll_no(roll_number):
-            st.error(f" Roll number '{roll_number}' already exists!")
+            st.error(f"❌ Roll number '{roll_number}' already exists!")
         elif get_student_by_prn(prn):
-            st.error(f" PRN '{prn}' already exists!")
+            st.error(f"❌ PRN '{prn}' already exists!")
         else:
             # Add student to session state
             new_student = {
@@ -2057,11 +1871,11 @@ def show_add_student():
             }
             st.session_state.students.append(new_student)
             save_data()  # Persist changes
-            st.success(f" Student '{student_name}' (Roll: {roll_number}, PRN: {prn}) added successfully!")
+            st.success(f"✅ Student '{student_name}' (Roll: {roll_number}, PRN: {prn}) added successfully!")
 
     
     st.markdown("---")
-    st.subheader(f" All Students ({len(st.session_state.students)})")
+    st.subheader(f"📋 All Students ({len(st.session_state.students)})")
     
     if len(st.session_state.students) == 0:
         st.info("No students added yet. Add a student using the form above.")
@@ -2079,7 +1893,7 @@ def show_add_student():
             
             with col3:
                 if student['photo']:
-                    st.caption(" Photo")
+                    st.caption("📷 Photo")
 
 
 
@@ -2090,35 +1904,35 @@ def show_add_student():
 
 def show_manage_students():
     """Display all students and allow adding/removing students with AI embedding generation."""
-    st.title(" Manage Students")
+    st.title("👥 Manage Students")
     st.write("View, add, and remove students from the AI Attendance System.")
     st.markdown("---")
     
-    tab1, tab2 = st.tabs([" All Students Directory", " Add New Student"])
+    tab1, tab2 = st.tabs(["📋 All Students Directory", "➕ Add New Student"])
     
     with tab1:
         if len(st.session_state.students) == 0:
             st.markdown("""
                 <div style="background:rgba(6,9,18,0.8); border:2px dashed rgba(79,158,255,0.2); border-radius:16px; padding:40px; text-align:center; margin-top:20px;">
-                    <div style="font-size:40px; margin-bottom:12px;"></div>
+                    <div style="font-size:40px; margin-bottom:12px;">👥</div>
                     <div style="color:#94a3b8; font-size:15px;">No students registered yet. Add your first student in the <strong style="color:#4f9eff;">Add New Student</strong> tab.</div>
                 </div>
             """, unsafe_allow_html=True)
         else:
-            #  KPI Strip 
+            # ── KPI Strip ──
             total_s = len(st.session_state.students)
             unique_branches = len(set(s.get('branch', 'Unknown') for s in st.session_state.students))
             students_with_photo = sum(1 for s in st.session_state.students if s.get('photo'))
             
             k1, k2, k3 = st.columns(3)
-            with k1: st.metric(" Total Students", total_s)
-            with k2: st.metric(" Branches", unique_branches)
-            with k3: st.metric(" With Photos", students_with_photo)
+            with k1: st.metric("👥 Total Students", total_s)
+            with k2: st.metric("🏢 Branches", unique_branches)
+            with k3: st.metric("📷 With Photos", students_with_photo)
             
             st.markdown("---")
 
-            #  Student Cards Grid 
-            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:16px;"> Student Directory</p>', unsafe_allow_html=True)
+            # ── Student Cards Grid ──
+            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:16px;">📋 Student Directory</p>', unsafe_allow_html=True)
             
             for idx, student in enumerate(st.session_state.students):
                 roll_no = student.get('roll_no', 'N/A')
@@ -2138,7 +1952,7 @@ def show_manage_students():
                     att_color = "#f472b6"
                     att_bg = "rgba(244,114,182,0.1)"
 
-                has_photo = "" if student.get('photo') else ""
+                has_photo = "✅" if student.get('photo') else "❌"
 
                 st.markdown(f"""
                     <div class="animated-card" style="padding:16px 20px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
@@ -2176,8 +1990,8 @@ def show_manage_students():
 
             st.markdown("---")
 
-            #  Student Detail Panel 
-            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:12px;"> Student Detail & Management</p>', unsafe_allow_html=True)
+            # ── Student Detail Panel ──
+            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:12px;">🔍 Student Detail & Management</p>', unsafe_allow_html=True)
 
             sel_col, _ = st.columns([0.25, 0.75])
             with sel_col:
@@ -2194,30 +2008,30 @@ def show_manage_students():
 
             if attendance_pct >= 75:
                 badge_color = "#34d399"; badge_bg = "rgba(52,211,153,0.12)"
-                status_label = " Good Standing"
+                status_label = "✅ Good Standing"
             elif attendance_pct >= 50:
                 badge_color = "#fb923c"; badge_bg = "rgba(251,146,60,0.12)"
-                status_label = " Warning Zone"
+                status_label = "⚠️ Warning Zone"
             else:
                 badge_color = "#f472b6"; badge_bg = "rgba(244,114,182,0.12)"
-                status_label = " Defaulter Risk"
+                status_label = "🚨 Defaulter Risk"
 
             d1, d2, d3 = st.columns([0.28, 0.38, 0.34])
 
             with d1:
-                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;"> Photo</div>', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">📷 Photo</div>', unsafe_allow_html=True)
                 if selected_student.get('photo') and isinstance(selected_student['photo'], bytes):
                     st.image(selected_student['photo'], use_container_width=True, caption=selected_student['name'])
                 else:
                     st.markdown("""
                         <div style="background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:12px;padding:30px;text-align:center;color:#475569;">
-                            <div style="font-size:36px;"></div>
+                            <div style="font-size:36px;">👤</div>
                             <div style="font-size:12px;margin-top:6px;">No Photo</div>
                         </div>
                     """, unsafe_allow_html=True)
 
             with d2:
-                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;"> Student Info</div>', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">📋 Student Info</div>', unsafe_allow_html=True)
                 st.markdown(f"""
                     <div class="animated-card" style="padding:20px;">
                         <div style="margin-bottom:12px;">
@@ -2246,7 +2060,7 @@ def show_manage_students():
                 """, unsafe_allow_html=True)
 
             with d3:
-                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;"> Attendance</div>', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">📊 Attendance</div>', unsafe_allow_html=True)
                 st.markdown(f"""
                     <div class="animated-card" style="padding:20px; text-align:center;">
                         <div style="font-size:42px; font-weight:900; color:{badge_color}; font-family:'JetBrains Mono',monospace;">{attendance_pct}%</div>
@@ -2271,14 +2085,13 @@ def show_manage_students():
             st.markdown("")
             _, _, btn_col = st.columns(3)
             with btn_col:
-                if st.button(" Remove Student", use_container_width=True, key="dir_remove_btn_merged"):
+                if st.button("🗑️ Remove Student", use_container_width=True, key="dir_remove_btn_merged"):
                     removed_roll = selected_student['roll_no']
                     removed_name = selected_student['name']
                     st.session_state.students.pop(int(selected_index))
                     st.session_state.attendance = [a for a in st.session_state.attendance if a.get("roll_no") != removed_roll]
-                    delete_student_assets(removed_roll)
                     save_data()
-                    st.success(f" Student '{removed_name}' removed successfully!")
+                    st.success(f"✅ Student '{removed_name}' removed successfully!")
                     st.rerun()
 
     with tab2:
@@ -2314,19 +2127,12 @@ def show_manage_students():
             submit = st.form_submit_button("Save Student & Generate Embeddings", type="primary", use_container_width=True)
             
             if submit:
-                # Strip trailing and leading whitespaces for clean data
-                name = name.strip() if name else ""
-                roll_no = roll_no.strip() if roll_no else ""
-                prn = prn.strip() if prn else ""
-                branch = branch.strip() if branch else ""
-                student_class = student_class.strip() if student_class else ""
-                
                 if not name or not roll_no or not prn:
                     st.error("Name, Roll Number, and PRN are required fields.")
                 elif get_student_by_roll_no(roll_no):
-                    st.error(f" Roll number '{roll_no}' already exists!")
+                    st.error(f"❌ Roll number '{roll_no}' already exists!")
                 elif get_student_by_prn(prn):
-                    st.error(f" PRN '{prn}' already exists!")
+                    st.error(f"❌ PRN '{prn}' already exists!")
                 elif camera_photo is None and uploaded_file is None:
                     st.error("Please provide a face image (upload or capture).")
                 else:
@@ -2359,16 +2165,16 @@ def show_manage_students():
                         faces = engine.face_analyzer.get(img_bgr)
                         
                         if len(faces) == 0:
-                            st.error(" No face detected in the image. Please try again with a clearer photo.")
+                            st.error("❌ No face detected in the image. Please try again with a clearer photo.")
                         elif len(faces) > 1:
-                            st.error(" Multiple faces detected. Please ensure only one student is in the frame.")
+                            st.error("❌ Multiple faces detected. Please ensure only one student is in the frame.")
                         else:
                             embedding = faces[0].embedding
                             match = engine.match_face(embedding)
                             
                             # Using 0.45 as a strict threshold for "same person"
                             if match and match['similarity'] > 0.45:
-                                st.error(f" This face is already registered in the system under: {match['name']} (Roll: {match['roll_no']}) with {match['similarity']*100:.1f}% confidence!")
+                                st.error(f"❌ This face is already registered in the system under: {match['name']} (Roll: {match['roll_no']}) with {match['similarity']*100:.1f}% confidence!")
                             else:
                                 resized_img = cv2.resize(img_bgr, (1000, 1000), interpolation=cv2.INTER_LINEAR)
                                 
@@ -2398,25 +2204,24 @@ def show_manage_students():
                                 with open(meta_path, 'w') as f:
                                     json.dump({"name": name, "roll_no": roll_no, "prn": prn, "branch": branch, "class": student_class, "added_on": timestamp}, f)
                                 
-                                st.success(f" Successfully added student '{name}' and saved image to dataset!")
-                                st.info(" Generating AI Face Embeddings... This may take a moment.")
+                                st.success(f"✅ Successfully added student '{name}' and saved image to dataset!")
+                                st.info("🔄 Generating AI Face Embeddings... This may take a moment.")
                                 
                                 from vision.generate_embeddings import generate_face_embeddings
                                 result = generate_face_embeddings(verbose=False)
                                 
                                 if result.get('status') in ['success', 'partial_success']:
-                                    st.success(" AI Embeddings updated successfully! The student will now be recognized.")
-                                    if st.session_state.recognition_engine is not None:
-                                        st.session_state.recognition_engine.reload_embeddings()
+                                    st.success("✅ AI Embeddings updated successfully! The student will now be recognized.")
+                                    st.session_state.recognition_engine = None
                                 else:
-                                    st.error(f" Warning: Failed to generate embeddings: {result.get('error', 'Unknown Error')}")
+                                    st.error(f"⚠️ Warning: Failed to generate embeddings: {result.get('error', 'Unknown Error')}")
                             
                     except Exception as e:
                         st.error(f"Failed to process image: {e}")
 
 def show_student_directory():
     """Display all students in a hybrid table + detail panel layout."""
-    st.title(" Student Directory")
+    st.title("📖 Student Directory")
     
     st.write("View and manage all students in the system with their complete information and attendance analytics.")
     st.markdown("---")
@@ -2424,7 +2229,7 @@ def show_student_directory():
     # ===== ADD STUDENT BUTTON =====
     col1, col2 = st.columns([0.15, 0.85])
     with col1:
-        if st.button(" Add Student", use_container_width=True):
+        if st.button("➕ Add Student", use_container_width=True):
             st.session_state.page = "Add Student"
             st.rerun()
     
@@ -2432,24 +2237,24 @@ def show_student_directory():
     
     # ===== EMPTY STATE =====
     if len(st.session_state.students) == 0:
-        st.info(" No students in the system yet. Click the 'Add Student' button above to get started.")
+        st.info("📌 No students in the system yet. Click the 'Add Student' button above to get started.")
         return
     
     # ===== STATS SECTION =====
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(" Total Students", len(st.session_state.students))
+        st.metric("👥 Total Students", len(st.session_state.students))
     with col2:
         unique_branches = len(set(s.get('branch', 'Unknown') for s in st.session_state.students))
-        st.metric(" Branches", unique_branches)
+        st.metric("🏢 Branches", unique_branches)
     with col3:
         students_with_photo = sum(1 for s in st.session_state.students if s.get('photo'))
-        st.metric(" With Photos", students_with_photo)
+        st.metric("📷 With Photos", students_with_photo)
     
     st.markdown("---")
     
     # ===== PRIMARY TABLE VIEW =====
-    st.subheader(" Student Directory Table")
+    st.subheader("📊 Student Directory Table")
     st.write("Click on a row number below to view detailed information:")
     
     # Create table data with all required columns
@@ -2463,7 +2268,7 @@ def show_student_directory():
             "PRN": student.get('prn'),
             "Branch": student.get('branch'),
             "Class": student.get('class'),
-            "Photo": "" if student.get('photo') else "",
+            "Photo": "✅" if student.get('photo') else "❌",
             "Attendance %": f"{attendance_pct}%"
         })
     
@@ -2487,7 +2292,7 @@ def show_student_directory():
     st.markdown("---")
     
     # ===== ROW SELECTION & DETAIL PANEL =====
-    st.subheader(" Student Details & Management")
+    st.subheader("🔍 Student Details & Management")
     
     col1, col2 = st.columns([0.3, 0.7])
     
@@ -2509,17 +2314,17 @@ def show_student_directory():
     detail_col1, detail_col2, detail_col3 = st.columns([0.35, 0.35, 0.3])
     
     with detail_col1:
-        st.write("###  Student Photo")
+        st.write("### � Student Photo")
         if selected_student.get('photo'):
             if isinstance(selected_student['photo'], bytes):
                 st.image(selected_student['photo'], width=200, caption=f"{selected_student['name']}'s Photo")
             else:
-                st.warning(" Old image format not supported. Please re-upload.")
+                st.warning("⚠️ Old image format not supported. Please re-upload.")
         else:
-            st.info(" No photo uploaded")
+            st.info("📌 No photo uploaded")
     
     with detail_col2:
-        st.write("###  Student Information")
+        st.write("### 📋 Student Information")
         st.write(f"**Name:** {selected_student['name']}")
         st.write(f"**Roll No:** {selected_student['roll_no']}")
         st.write(f"**PRN:** {selected_student['prn']}")
@@ -2527,7 +2332,7 @@ def show_student_directory():
         st.write(f"**Class:** {selected_student['class']}")
     
     with detail_col3:
-        st.write("###  Attendance")
+        st.write("### 📊 Attendance")
         st.metric("Attendance %", f"{attendance_pct}%")
         
         # Get total and present counts
@@ -2545,8 +2350,8 @@ def show_student_directory():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button(" View Full Attendance", use_container_width=True):
-            st.info(f" Attendance records for {selected_student['name']} (Roll: {selected_student['roll_no']})")
+        if st.button("🔄 View Full Attendance", use_container_width=True):
+            st.info(f"📌 Attendance records for {selected_student['name']} (Roll: {selected_student['roll_no']})")
             # Display period-based attendance for this student
             student_attendance = []
             for record in st.session_state.period_attendance:
@@ -2572,12 +2377,12 @@ def show_student_directory():
         st.write("")  # Spacer
     
     with col3:
-        if st.button(" Remove Student", use_container_width=True, key="dir_remove_btn"):
+        if st.button("🗑️ Remove Student", use_container_width=True, key="dir_remove_btn"):
             # Remove student from list
             removed_name = st.session_state.students[int(selected_index)]['name']
             st.session_state.students.pop(int(selected_index))
             save_data()  # Persist changes
-            st.success(f" Student '{removed_name}' removed successfully!")
+            st.success(f"✅ Student '{removed_name}' removed successfully!")
             st.rerun()
 
 
@@ -2593,7 +2398,7 @@ def show_student_directory():
 
 def show_remove_student():
     """Remove Student page - Remove students with college details."""
-    st.title(" Remove Student")
+    st.title("➖ Remove Student")
     
     st.write("Remove students from the system. All related attendance records will also be removed.")
     st.markdown("---")
@@ -2626,7 +2431,7 @@ def show_remove_student():
         - Class: {student['class']}
         """)
     
-    if st.button(" Remove Selected Student"):
+    if st.button("🗑️ Remove Selected Student"):
         # Find and remove student
         for i, student in enumerate(st.session_state.students):
             if student["roll_no"] == selected_roll:
@@ -2636,12 +2441,12 @@ def show_remove_student():
                     if a.get("roll_no") != selected_roll
                 ]
                 save_data()  # Persist changes
-                st.success(f" Student '{removed_student['name']}' (PRN: {removed_student['prn']}) removed successfully!")
-                st.info(" All related attendance records also removed.")
+                st.success(f"✅ Student '{removed_student['name']}' (PRN: {removed_student['prn']}) removed successfully!")
+                st.info("✓ All related attendance records also removed.")
                 break
     
     st.markdown("---")
-    st.subheader(" Remaining Students")
+    st.subheader("📋 Remaining Students")
     if st.session_state.students:
         for i, student in enumerate(st.session_state.students, 1):
             st.write(f"{i}. **{student['name']}** (Roll: {student['roll_no']}, PRN: {student['prn']}) - {student['branch']}")
@@ -3008,7 +2813,7 @@ def show_timetable():
         return output.getvalue()
         
     st.download_button(
-        label=" Export Timetable to Excel",
+        label="📥 Export Timetable to Excel",
         data=generate_excel_timetable(),
         file_name=f"{s['class']}_{s['department'].replace(' ', '_')}_Timetable.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3114,17 +2919,17 @@ def show_timetable():
 
 def show_live_attendance():
     """Live Attendance page - Mark attendance linked to specific periods."""
-    st.title(" Live Attendance Management (Period-Based)")
+    st.title("🎥 Live Attendance Management (Period-Based)")
     
     st.write("Mark attendance for students linked to specific lecture/lab/practical periods.")
     st.markdown("---")
     
     if len(st.session_state.students) == 0:
-        st.warning(" No students in the system. Add students first!")
+        st.warning("⚠️ No students in the system. Add students first!")
         return
     
     # ===== SELECT DATE & PERIOD SECTION =====
-    st.subheader(" Select Date & Period")
+    st.subheader("📅 Select Date & Period")
     
     col_d1, col_d2 = st.columns(2)
     
@@ -3136,12 +2941,12 @@ def show_live_attendance():
         )
         selected_date_str = selected_date.strftime("%Y-%m-%d")
         selected_day = selected_date.strftime("%A")
-        st.info(f" Detected Weekday: **{selected_day}**")
+        st.info(f"📅 Detected Weekday: **{selected_day}**")
     
     with col_d2:
         if selected_date_str in st.session_state.timetable:
             day_periods = st.session_state.timetable[selected_date_str]
-            st.success(f" Custom schedule loaded for date **{selected_date_str}**!")
+            st.success(f"✨ Custom schedule loaded for date **{selected_date_str}**!")
             selected_day = selected_date_str
         else:
             day_periods = st.session_state.timetable.get(selected_day, [])
@@ -3162,7 +2967,7 @@ def show_live_attendance():
                     selected_period = p
                     break
         else:
-            st.error(f" No lecture/lab/practical periods scheduled for {selected_day}!")
+            st.error(f"❌ No lecture/lab/practical periods scheduled for {selected_day}!")
             selected_period = None
     
     if not selected_period:
@@ -3170,12 +2975,12 @@ def show_live_attendance():
         return
     
     # Display selected period details
-    st.success(f" Selected Class: {selected_period_label} on {selected_date_str} ({selected_day})")
+    st.success(f"📌 Selected Class: {selected_period_label} on {selected_date_str} ({selected_day})")
     
     st.markdown("---")
     
     # ===== MARK ATTENDANCE SECTION =====
-    st.subheader(" Mark Attendance")
+    st.subheader("✅ Mark Attendance")
     
     col1, col2, col3 = st.columns(3)
     
@@ -3191,17 +2996,17 @@ def show_live_attendance():
         status = st.selectbox("Status", ["Present", "Absent", "Late"], key="att_status")
     
     with col3:
-        if st.button(" Mark Attendance", key="btn_mark_att"):
+        if st.button("✅ Mark Attendance", key="btn_mark_att"):
             student = get_student_by_roll_no(selected_roll)
             add_period_attendance(selected_day, selected_period, selected_roll, student["name"], status, date_str=selected_date_str)
             save_data()  # Persist changes
-            st.success(f" Attendance marked for {selected_date_str}: {student['name']} ({student['roll_no']}) - {status}")
+            st.success(f"✅ Attendance marked for {selected_date_str}: {student['name']} ({student['roll_no']}) - {status}")
             st.rerun()
     
     st.markdown("---")
     
     # ===== PERIOD ATTENDANCE STATISTICS =====
-    st.subheader(f" {selected_period_label} ({selected_date_str}) - Attendance Summary")
+    st.subheader(f"📊 {selected_period_label} ({selected_date_str}) - Attendance Summary")
     
     today = selected_date_str
     period_index = 0
@@ -3230,40 +3035,40 @@ def show_live_attendance():
         st.metric("Total Students", len(st.session_state.students))
     with col2:
         present_count = sum(1 for status in attendance_dict.values() if status == "Present")
-        st.metric(" Present", present_count)
+        st.metric("✅ Present", present_count)
     with col3:
         absent_count = sum(1 for status in attendance_dict.values() if status == "Absent")
-        st.metric(" Absent", absent_count)
+        st.metric("❌ Absent", absent_count)
     with col4:
         late_count = sum(1 for status in attendance_dict.values() if status == "Late")
-        st.metric("⏱ Late", late_count)
+        st.metric("⏱️ Late", late_count)
     
     st.markdown("---")
     
     # ===== DETAILED ATTENDANCE LIST =====
-    st.subheader(" Attendance Details for This Period")
+    st.subheader("📋 Attendance Details for This Period")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("** Present:**")
+        st.write("**✅ Present:**")
         present_list = [(roll, status) for roll, status in attendance_dict.items() if status == "Present"]
         if present_list:
             for roll_no, status in present_list:
                 student = get_student_by_roll_no(roll_no)
                 student_name = student.get("name", roll_no) if student else roll_no
-                st.write(f" {student_name} ({roll_no})")
+                st.write(f"✅ {student_name} ({roll_no})")
         else:
             st.info("No present records yet")
     
     with col2:
-        st.write("** Absent / ⏱ Late:**")
+        st.write("**❌ Absent / ⏱️ Late:**")
         absent_list = [(roll, status) for roll, status in attendance_dict.items() if status in ["Absent", "Late"]]
         if absent_list:
             for roll_no, status in absent_list:
                 student = get_student_by_roll_no(roll_no)
                 student_name = student.get("name", roll_no) if student else roll_no
-                status_emoji = "" if status == "Absent" else "⏱"
+                status_emoji = "❌" if status == "Absent" else "⏱️"
                 st.write(f"{status_emoji} {student_name} ({roll_no}) - {status}")
         else:
             st.info("No absent/late records yet")
@@ -3284,7 +3089,7 @@ def show_live_attendance():
             with col2:
                 st.caption(f"{s['class']}")
     else:
-        st.success(" All students marked for this period!")
+        st.success("✅ All students marked for this period!")
 
 
 def show_reports_page():
@@ -3293,7 +3098,7 @@ def show_reports_page():
     st.markdown("""
         <div style="margin-bottom:28px;">
             <h2 style="margin:0; font-size:30px; font-weight:900; background:linear-gradient(135deg,#a78bfa,#4f9eff); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-                 Attendance Reports
+                📊 Attendance Reports
             </h2>
             <p style="color:#64748b; font-size:13px; margin:4px 0 0 0;">Real-time live matrix, date-wise, week-wise & month-wise attendance with Excel export</p>
         </div>
@@ -3302,7 +3107,7 @@ def show_reports_page():
     if len(st.session_state.students) == 0:
         st.markdown("""
             <div style="background:rgba(6,9,18,0.8); border:2px dashed rgba(251,146,60,0.3); border-radius:16px; padding:40px; text-align:center;">
-                <div style="font-size:40px; margin-bottom:12px;"></div>
+                <div style="font-size:40px; margin-bottom:12px;">⚠️</div>
                 <div style="color:#fb923c; font-size:15px; font-weight:700;">No students in the system.</div>
                 <div style="color:#64748b; font-size:13px; margin-top:6px;">Add students first before generating reports.</div>
             </div>
@@ -3321,11 +3126,11 @@ def show_reports_page():
     today_str = datetime.now().strftime("%Y-%m-%d")
     day_str = datetime.now().strftime("%A")
 
-    tab1, tab2 = st.tabs([" Today's Live Matrix", " Export Reports"])
+    tab1, tab2 = st.tabs(["📋 Today's Live Matrix", "📥 Export Reports"])
 
-    # 
+    # ─────────────────────────────────────────────
     # TAB 1: TODAY'S LIVE MATRIX
-    # 
+    # ─────────────────────────────────────────────
     with tab1:
         timetable = _live_tt.get(today_str) or _live_tt.get(day_str, [])
 
@@ -3336,7 +3141,7 @@ def show_reports_page():
                     <div style="font-size:12px; color:#64748b;">{today_str}</div>
                 </div>
                 <div style="background:rgba(52,211,153,0.1); border:1px solid rgba(52,211,153,0.3); border-radius:20px; padding:6px 14px;">
-                    <span style="color:#34d399; font-size:12px; font-weight:700;"> LIVE</span>
+                    <span style="color:#34d399; font-size:12px; font-weight:700;">● LIVE</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -3344,7 +3149,7 @@ def show_reports_page():
         if not timetable:
             st.markdown(f"""
                 <div style="background:rgba(6,9,18,0.8); border:2px dashed rgba(79,158,255,0.2); border-radius:16px; padding:50px; text-align:center;">
-                    <div style="font-size:40px; margin-bottom:12px;"></div>
+                    <div style="font-size:40px; margin-bottom:12px;">🏖️</div>
                     <div style="color:#94a3b8; font-size:15px; font-weight:700;">No Periods Scheduled Today</div>
                     <div style="color:#64748b; font-size:13px; margin-top:6px;">{day_str} ({today_str}) — Add periods in the Timetable section.</div>
                 </div>
@@ -3365,8 +3170,7 @@ def show_reports_page():
                 start = p.get('start_time', '')
                 end = p.get('end_time', '')
                 per_records = today_erp.get(subj, {}).get(per_id, {})
-                valid_statuses = ["Present", "Present (Excused)", "Late", "Auto-Carried", "Exited", "Exited (Unverified)"]
-                present_count = sum(1 for v in per_records.values() if v.get("status") in valid_statuses)
+                present_count = sum(1 for v in per_records.values() if v.get("status") in ["Present", "Late", "Auto-Carried"])
                 total = len(st.session_state.students)
                 pct = round(present_count / total * 100) if total > 0 else 0
                 accent = "#34d399" if pct >= 75 else "#fb923c" if pct >= 50 else "#f472b6"
@@ -3393,23 +3197,18 @@ def show_reports_page():
                     per_id = p.get('period', 'Unknown')
                     col_name = f"{subj} [{per_id}]"
                     rec = today_erp.get(subj, {}).get(per_id, {}).get(roll_no)
-                    if rec and rec.get("status") in ["Present", "Present (Excused)", "Late", "Auto-Carried", "Exited", "Exited (Unverified)"]:
-                        if rec.get("status") == "Late":
-                            row[col_name] = "⏱"
-                        elif rec.get("status") == "Present (Excused)":
-                            row[col_name] = "E"
-                        else:
-                            row[col_name] = ""
+                    if rec and rec.get("status") in ["Present", "Late", "Auto-Carried"]:
+                        row[col_name] = "✅"
                         row[f"_time_{col_name}"] = rec.get("entry_time", "")
                     else:
-                        row[col_name] = "A"
+                        row[col_name] = "❌"
                         row[f"_time_{col_name}"] = "-"
                 report_data.append(row)
 
             df = pd.DataFrame(report_data)
             display_cols = [c for c in df.columns if not c.startswith("_time_")]
 
-            #  Build HTML table 
+            # ── Build HTML table ──
             period_cols_hdr = [c for c in display_cols if c not in ["#","Roll No","Name","Branch","Class"]]
 
             header_cells = "".join([
@@ -3428,21 +3227,19 @@ def show_reports_page():
                 ])
                 for c in period_cols_hdr:
                     v = row[c]
-                    if v == "":
-                        badge = '<span style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;"> Present</span>'
-                    elif v == "⏱":
+                    if v == "✅":
+                        badge = '<span style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;">✅ Present</span>'
+                    elif v == "⏱️":
                         badge = '<span style="background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;">⏱ Late</span>'
-                    elif v == "E":
-                        badge = '<span style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;"> Excused</span>'
                     else:
-                        badge = '<span style="background:rgba(244,114,182,0.1);color:#f472b6;border:1px solid rgba(244,114,182,0.2);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;"> Absent</span>'
+                        badge = '<span style="background:rgba(244,114,182,0.1);color:#f472b6;border:1px solid rgba(244,114,182,0.2);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;">❌ Absent</span>'
                     cells += f'<td style="padding:8px 14px;text-align:center;">{badge}</td>'
                 body_rows += f'<tr style="background:{bg};border-bottom:1px solid rgba(255,255,255,0.03);">{cells}</tr>'
 
             matrix_html = f"""
             <div style="background:rgba(12,17,33,0.8);border:1px solid rgba(79,158,255,0.12);border-radius:14px;overflow:hidden;margin-bottom:8px;">
                 <div style="padding:14px 18px 10px;border-bottom:1px solid rgba(79,158,255,0.1);display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;"> Full Attendance Matrix</span>
+                    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">📋 Full Attendance Matrix</span>
                     <span style="background:rgba(79,158,255,0.1);color:#4f9eff;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700;">{len(df)} Students</span>
                     <span style="background:rgba(52,211,153,0.1);color:#34d399;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700;">{len(period_cols_hdr)} Periods</span>
                 </div>
@@ -3459,7 +3256,7 @@ def show_reports_page():
             st.markdown("---")
 
             # Per-student period detail
-            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:10px;"> Student Period Drill-Down</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:10px;">🕒 Student Period Drill-Down</p>', unsafe_allow_html=True)
             roll_list = df["Roll No"].tolist()
             if roll_list:
                 sel_roll = st.selectbox("Select Student", roll_list,
@@ -3472,74 +3269,58 @@ def show_reports_page():
                         subj = p.get('subject', 'Unknown')
                         per_id = p.get('period', 'Unknown')
                         col_name = f"{subj} [{per_id}]"
-                        val = sdata.get(col_name, "")
+                        val = sdata.get(col_name, "❌")
                         t_val = sdata.get(f"_time_{col_name}", "-")
-                        is_present = val in ["", "⏱", "E"]
-                        if val == "":
-                            status_text = "Present"
-                            accent = "#34d399"
-                            icon = "✅"
-                        elif val == "⏱":
-                            status_text = "Late"
-                            accent = "#fb923c"
-                            icon = "⏱"
-                        elif val == "E":
-                            status_text = "Excused"
-                            accent = "#38bdf8"
-                            icon = "E"
-                        else:
-                            status_text = "Absent"
-                            accent = "#f472b6"
-                            icon = "❌"
-                            
+                        is_present = val == "✅"
+                        accent = "#34d399" if is_present else "#f472b6"
                         with drill_cols[i % len(drill_cols)]:
                             st.markdown(f"""
                                 <div class="animated-card" style="padding:14px; text-align:center; border-left:4px solid {accent} !important;">
                                     <div style="font-size:11px; color:#64748b;">{per_id}</div>
                                     <div style="font-size:13px; font-weight:800; color:#ffffff; margin:4px 0;">{subj[:14]}</div>
-                                    <div style="font-size:22px; font-weight:900; color:{accent}; margin:8px 0;">{icon} {status_text}</div>
-                                    <div style="font-size:11px; color:#64748b;">{"Entry: " + t_val if is_present else "No Record"}</div>
+                                    <div style="font-size:28px; margin:8px 0;">{val}</div>
+                                    <div style="font-size:11px; color:#64748b;">{"⏱ " + t_val if is_present else "Absent"}</div>
                                 </div>
                             """, unsafe_allow_html=True)
 
-    # 
+    # ─────────────────────────────────────────────
     # TAB 2: EXPORT REPORTS — 5 scopes
-    # 
+    # ─────────────────────────────────────────────
     with tab2:
         st.markdown("""
             <div style="background:linear-gradient(135deg,rgba(79,158,255,0.06),rgba(167,139,250,0.06));border:1px solid rgba(79,158,255,0.15);border-radius:16px;padding:20px;margin-bottom:20px;">
-                <div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:12px;"> Export Attendance Reports</div>
+                <div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:12px;">📥 Export Attendance Reports</div>
                 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
                     <div style="background:rgba(79,158,255,0.08);border:1px solid rgba(79,158,255,0.2);border-radius:10px;padding:10px;text-align:center;">
-                        <div style="font-size:16px;"></div><div style="font-size:11px;font-weight:700;color:#4f9eff;margin-top:4px;">Day-wise</div>
+                        <div style="font-size:16px;">📅</div><div style="font-size:11px;font-weight:700;color:#4f9eff;margin-top:4px;">Day-wise</div>
                         <div style="font-size:10px;color:#64748b;margin-top:2px;">All Mondays / Fridays etc.</div>
                     </div>
                     <div style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:10px;padding:10px;text-align:center;">
-                        <div style="font-size:16px;"></div><div style="font-size:11px;font-weight:700;color:#a78bfa;margin-top:4px;">Date-wise</div>
+                        <div style="font-size:16px;">📆</div><div style="font-size:11px;font-weight:700;color:#a78bfa;margin-top:4px;">Date-wise</div>
                         <div style="font-size:10px;color:#64748b;margin-top:2px;">Specific calendar date</div>
                     </div>
                     <div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.2);border-radius:10px;padding:10px;text-align:center;">
-                        <div style="font-size:16px;"></div><div style="font-size:11px;font-weight:700;color:#fb923c;margin-top:4px;">Period-wise</div>
+                        <div style="font-size:16px;">🕐</div><div style="font-size:11px;font-weight:700;color:#fb923c;margin-top:4px;">Period-wise</div>
                         <div style="font-size:10px;color:#64748b;margin-top:2px;">One subject per period</div>
                     </div>
                     <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:10px;padding:10px;text-align:center;">
-                        <div style="font-size:16px;"></div><div style="font-size:11px;font-weight:700;color:#34d399;margin-top:4px;">Week-wise</div>
+                        <div style="font-size:16px;">🗓️</div><div style="font-size:11px;font-weight:700;color:#34d399;margin-top:4px;">Week-wise</div>
                         <div style="font-size:10px;color:#64748b;margin-top:2px;">Full Mon–Sat week</div>
                     </div>
                     <div style="background:rgba(244,114,182,0.08);border:1px solid rgba(244,114,182,0.2);border-radius:10px;padding:10px;text-align:center;">
-                        <div style="font-size:16px;"></div><div style="font-size:11px;font-weight:700;color:#f472b6;margin-top:4px;">Month-wise</div>
+                        <div style="font-size:16px;">📊</div><div style="font-size:11px;font-weight:700;color:#f472b6;margin-top:4px;">Month-wise</div>
                         <div style="font-size:10px;color:#64748b;margin-top:2px;">Complete calendar month</div>
                     </div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-        scope_tabs = st.tabs([" Day-wise", " Date-wise", " Period-wise", " Week-wise", " Month-wise"])
+        scope_tabs = st.tabs(["📅 Day-wise", "📆 Date-wise", "🕐 Period-wise", "🗓️ Week-wise", "📊 Month-wise"])
 
-        #  1. DAY-WISE: all recorded dates for a given weekday 
+        # ── 1. DAY-WISE: all recorded dates for a given weekday ──
         with scope_tabs[0]:
             st.markdown("""<div class="animated-card" style="padding:18px;margin-bottom:14px;">
-                <div style="font-size:14px;font-weight:700;color:#4f9eff;margin-bottom:4px;"> Day-wise Report</div>
+                <div style="font-size:14px;font-weight:700;color:#4f9eff;margin-bottom:4px;">📅 Day-wise Report</div>
                 <div style="font-size:12px;color:#64748b;">Shows all subjects &amp; periods recorded on every <b>Monday / Tuesday /…</b> etc. across all dates. Useful for recurring weekly analysis.</div>
             </div>""", unsafe_allow_html=True)
             dw_day = st.selectbox("Select Weekday", ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"], key="dw_day")
@@ -3549,13 +3330,13 @@ def show_reports_page():
                 st.markdown(f'<div style="color:#64748b;font-size:12px;margin-bottom:10px;">Data found for: <b style="color:#4f9eff;">{", ".join(matching_dates)}</b></div>', unsafe_allow_html=True)
             else:
                 st.markdown(f'<div style="color:#64748b;font-size:12px;margin-bottom:10px;">No attendance data recorded for any {dw_day} yet — run AI Live Attendance during a scheduled {dw_day} period.</div>', unsafe_allow_html=True)
-            if st.button(" Generate Day-wise Report", type="primary", use_container_width=True, key="gen_dw_btn"):
+            if st.button("📊 Generate Day-wise Report", type="primary", use_container_width=True, key="gen_dw_btn"):
                 _generate_and_show_report("Particular Day", dw_day, None, _live_tt)
 
-        #  2. DATE-WISE: all subjects on a specific calendar date 
+        # ── 2. DATE-WISE: all subjects on a specific calendar date ──
         with scope_tabs[1]:
             st.markdown("""<div class="animated-card" style="padding:18px;margin-bottom:14px;">
-                <div style="font-size:14px;font-weight:700;color:#a78bfa;margin-bottom:4px;"> Date-wise Report</div>
+                <div style="font-size:14px;font-weight:700;color:#a78bfa;margin-bottom:4px;">📆 Date-wise Report</div>
                 <div style="font-size:12px;color:#64748b;">Shows all subjects &amp; periods for a <b>specific calendar date</b> — exactly what the AI logged that day.</div>
             </div>""", unsafe_allow_html=True)
             dt_date = st.date_input("Select Date", key="dt_date")
@@ -3567,13 +3348,13 @@ def show_reports_page():
                 period_labels = [f"{p.get('subject','')} [{p.get('period','')}] {p.get('start_time','')}–{p.get('end_time','')}" for p in dt_periods if p.get("type","lecture").lower() in ["lecture","lab","practical"]]
                 if period_labels:
                     st.markdown(f'<div style="color:#64748b;font-size:12px;margin-bottom:10px;">Scheduled periods: <b style="color:#a78bfa;">{" | ".join(period_labels)}</b></div>', unsafe_allow_html=True)
-            if st.button(" Generate Date Report", type="primary", use_container_width=True, key="gen_dt_btn"):
+            if st.button("📊 Generate Date Report", type="primary", use_container_width=True, key="gen_dt_btn"):
                 _generate_and_show_report("Particular Date", dt_scope, None, _live_tt)
 
-        #  3. PERIOD-WISE: single subject+period on a specific date 
+        # ── 3. PERIOD-WISE: single subject+period on a specific date ──
         with scope_tabs[2]:
             st.markdown("""<div class="animated-card" style="padding:18px;margin-bottom:14px;">
-                <div style="font-size:14px;font-weight:700;color:#fb923c;margin-bottom:4px;"> Period-wise Report</div>
+                <div style="font-size:14px;font-weight:700;color:#fb923c;margin-bottom:4px;">🕐 Period-wise Report</div>
                 <div style="font-size:12px;color:#64748b;">Shows attendance for a <b>single subject period</b> on a chosen date — drill down to exactly who was Present / Late / Absent for one class.</div>
             </div>""", unsafe_allow_html=True)
             pw_date = st.date_input("Select Date", key="pw_date")
@@ -3585,15 +3366,15 @@ def show_reports_page():
                 pw_options = {f"{p.get('subject','')} [{p.get('period','')}] {p.get('start_time','')}–{p.get('end_time','')}": p.get("period","") for p in pw_class_periods}
                 pw_sel_label = st.selectbox("Select Period", list(pw_options.keys()), key="pw_period_sel")
                 pw_period_id = pw_options[pw_sel_label]
-                if st.button(" Generate Period Report", type="primary", use_container_width=True, key="gen_pw_btn"):
+                if st.button("📊 Generate Period Report", type="primary", use_container_width=True, key="gen_pw_btn"):
                     _generate_and_show_report("Particular Period", pw_scope, pw_period_id, _live_tt)
             else:
                 st.markdown(f'<div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.2);border-radius:10px;padding:14px;color:#fb923c;font-size:13px;">No scheduled periods found for {pw_day} ({pw_scope}). Add periods in the Timetable section first.</div>', unsafe_allow_html=True)
 
-        #  4. WEEK-WISE: full Mon–Sat for any selected week 
+        # ── 4. WEEK-WISE: full Mon–Sat for any selected week ──
         with scope_tabs[3]:
             st.markdown("""<div class="animated-card" style="padding:18px;margin-bottom:14px;">
-                <div style="font-size:14px;font-weight:700;color:#34d399;margin-bottom:4px;"> Week-wise Report</div>
+                <div style="font-size:14px;font-weight:700;color:#34d399;margin-bottom:4px;">🗓️ Week-wise Report</div>
                 <div style="font-size:12px;color:#64748b;">All subjects &amp; periods across <b>an entire week (Mon–Sat)</b> — shows each day's columns side by side with entry times.</div>
             </div>""", unsafe_allow_html=True)
             wk_date = st.date_input("Pick any day in the target week", key="wk_date")
@@ -3613,16 +3394,16 @@ def show_reports_page():
             wk_cols = st.columns(6)
             for i, di in enumerate(day_info):
                 with wk_cols[i]:
-                    dot = "" if di["has_data"] else ""
+                    dot = "🟢" if di["has_data"] else "⚫"
                     st.markdown(f'<div style="text-align:center;padding:8px;background:rgba(255,255,255,0.03);border-radius:8px;"><div style="font-size:11px;color:#64748b;">{di["day"]}</div><div style="font-size:12px;font-weight:700;color:#94a3b8;">{di["date"][8:]}</div><div style="font-size:10px;color:#64748b;">{di["periods"]}p {dot}</div></div>', unsafe_allow_html=True)
             st.markdown("")
-            if st.button(" Generate Week Report", type="primary", use_container_width=True, key="gen_wk_btn"):
+            if st.button("📊 Generate Week Report", type="primary", use_container_width=True, key="gen_wk_btn"):
                 _generate_and_show_report("Complete Week", wk_scope, None, _live_tt)
 
-        #  5. MONTH-WISE: all days in a calendar month 
+        # ── 5. MONTH-WISE: all days in a calendar month ──
         with scope_tabs[4]:
             st.markdown("""<div class="animated-card" style="padding:18px;margin-bottom:14px;">
-                <div style="font-size:14px;font-weight:700;color:#f472b6;margin-bottom:4px;"> Month-wise Report</div>
+                <div style="font-size:14px;font-weight:700;color:#f472b6;margin-bottom:4px;">📊 Month-wise Report</div>
                 <div style="font-size:12px;color:#64748b;">Complete month summary — all subjects, all days, subject-wise attendance percentage, and defaulter list for the whole month.</div>
             </div>""", unsafe_allow_html=True)
             months_map = {"January":"01","February":"02","March":"03","April":"04","May":"05","June":"06",
@@ -3639,7 +3420,7 @@ def show_reports_page():
                 st.markdown(f'<div style="color:#64748b;font-size:12px;margin-bottom:10px;">AI attendance recorded on <b style="color:#f472b6;">{len(recorded_days)} day(s)</b>: {", ".join(recorded_days)}</div>', unsafe_allow_html=True)
             else:
                 st.markdown(f'<div style="color:#64748b;font-size:12px;margin-bottom:10px;">No AI attendance data for {sel_month} {int(sel_year)} yet.</div>', unsafe_allow_html=True)
-            if st.button(" Generate Month Report", type="primary", use_container_width=True, key="gen_mo_btn"):
+            if st.button("📊 Generate Month Report", type="primary", use_container_width=True, key="gen_mo_btn"):
                 _generate_and_show_report("Complete Month", m_scope, None, _live_tt)
 
 
@@ -3647,7 +3428,7 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
     """Shared report generation + display + download logic."""
     import io, calendar as cal_mod
 
-    #  Load live data sources 
+    # ── Load live data sources ──
     try:
         with open("data/erp_attendance.json", "r") as _ef:
             erp_data = json.load(_ef)
@@ -3662,7 +3443,7 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
     except Exception:
         period_attendance = st.session_state.period_attendance
 
-    #  Determine date range for scope 
+    # ── Determine date range for scope ──
     scope_dates = []
     if scope_type == "Particular Day":
         scope_dates = sorted(set(r.get("date","") for r in period_attendance if r.get("day")==scope_value and r.get("date")))
@@ -3677,7 +3458,7 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
         _, nd = cal_mod.monthrange(yr, mo)
         scope_dates = [datetime(yr, mo, d).strftime("%Y-%m-%d") for d in range(1, nd+1)]
 
-    #  Collect all period slots with time info 
+    # ── Collect all period slots with time info ──
     period_slots = []
     seen_slots = set()
     for d_str in scope_dates:
@@ -3707,7 +3488,7 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
 
     if not period_slots:
         st.markdown("""<div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.3);border-radius:12px;padding:20px;text-align:center;margin-top:16px;">
-            <div style="color:#fb923c;font-weight:700;"> No scheduled classes found for this scope.</div>
+            <div style="color:#fb923c;font-weight:700;">⚠️ No scheduled classes found for this scope.</div>
             <div style="color:#64748b;font-size:12px;margin-top:6px;">Configure timetable and run AI attendance first.</div>
         </div>""", unsafe_allow_html=True)
         return
@@ -3721,29 +3502,9 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
 
     col_labels = [col_label(s) for s in period_slots]
 
-    # --- COORDINATION LOGIC: Filter students by Timetable Settings ---
-    if "tt_settings" in st.session_state:
-        tt_dept = st.session_state.tt_settings.get("department", "CSE(AI&ML)")
-        tt_cls = st.session_state.tt_settings.get("class", "TY")
-        if tt_dept.startswith("DEPARTMENT OF "):
-            tt_dept = tt_dept.replace("DEPARTMENT OF ", "").strip()
-    else:
-        tt_dept = "CSE(AI&ML)"
-        tt_cls = "TY"
-
-    filtered_students = [s for s in st.session_state.students 
-                         if str(s.get("branch","")).strip() == tt_dept and str(s.get("class","")).strip() == tt_cls]
-
-    if not filtered_students:
-        st.markdown(f"""<div style="background:rgba(244,114,182,0.08);border:1px solid rgba(244,114,182,0.3);border-radius:12px;padding:20px;text-align:center;margin-top:16px;">
-            <div style="color:#f472b6;font-weight:700;"> No students found for Class {tt_cls} — {tt_dept}</div>
-            <div style="color:#64748b;font-size:12px;margin-top:6px;">Go to Manage Students and add students to this exact Class and Branch to generate reports.</div>
-        </div>""", unsafe_allow_html=True)
-        return
-
-    #  Build rows (Present/Late/Absent per slot) 
+    # ── Build rows (Present/Late/Absent per slot) ──
     rows_disp, rows_xl = [], []
-    for student in filtered_students:
+    for student in st.session_state.students:
         roll_no = str(student.get("roll_no",""))
         base = {"Name":student.get("name",""),"Roll No":roll_no,"PRN":str(student.get("prn","")),"Branch":student.get("branch",""),"Class":student.get("class","")}
         xl = dict(base)
@@ -3753,46 +3514,23 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
             erp_rec = erp_data.get(slot["date"],{}).get(slot["subject"],{}).get(slot["period"],{}).get(roll_no)
             if erp_rec:
                 raw = erp_rec.get("status","Absent")
-                if raw in ["Present", "Auto-Carried", "Exited", "Exited (Unverified)"]:
-                    status = "Present"
-                elif raw == "Present (Excused)":
-                    status = "Excused"
-                elif raw == "Late":
-                    status = "Late"
-                else:
-                    status = "Absent"
+                status = "Present" if raw in ["Present","Auto-Carried"] else ("Late" if raw=="Late" else "Absent")
                 entry = erp_rec.get("entry_time","-") or "-"
             else:
                 status = "Absent"; entry = "-"
                 for pa in period_attendance:
                     if pa.get("date")==slot["date"] and pa.get("period")==slot["period"] and pa.get("subject")==slot["subject"]:
                         raw = pa.get("attendance",{}).get(roll_no,"Absent")
-                        if raw in ["Present", "Auto-Carried", "Exited", "Exited (Unverified)"]:
-                            status = "Present"
-                        elif raw == "Present (Excused)":
-                            status = "Excused"
-                        elif raw == "Late":
-                            status = "Late"
-                        else:
-                            status = "Absent"
+                        status = "Present" if raw in ["Present","Auto-Carried"] else ("Late" if raw=="Late" else "Absent")
                         break
 
-            if status in ["Present","Late","Excused"]: total_present += 1
-            if status == "Present":
-                lbl_disp = " Present"
-            elif status == "Late":
-                lbl_disp = "⏱ Late"
-            elif status == "Excused":
-                lbl_disp = " E"
-            else:
-                lbl_disp = " Absent"
-            
-            base[lbl] = lbl_disp
+            if status in ["Present","Late"]: total_present += 1
+            base[lbl] = "✅ Present" if status=="Present" else ("⏱️ Late" if status=="Late" else "❌ Absent")
             xl[lbl] = status
             xl[f"Entry [{slot['period']}]"] = entry
 
         pct = round(total_present/len(period_slots)*100,1) if period_slots else 100.0
-        base["Att %"] = f"{pct}%"; base["Status"] = "OK " if pct>=75 else "Defaulter "
+        base["Att %"] = f"{pct}%"; base["Status"] = "OK ✅" if pct>=75 else "Defaulter ⚠️"
         xl["Attendance %"] = pct; xl["Status"] = "OK" if pct>=75 else "Defaulter"
         rows_disp.append(base); rows_xl.append(xl)
 
@@ -3806,13 +3544,13 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
 
     st.markdown("---")
     k1,k2,k3,k4 = st.columns(4)
-    with k1: st.metric(" Students", total_s)
-    with k2: st.metric(" OK (≥75%)", total_s-defaulters)
-    with k3: st.metric(" Defaulters", defaulters)
-    with k4: st.metric(" Avg Att.", f"{avg_pct}%")
+    with k1: st.metric("👥 Students", total_s)
+    with k2: st.metric("✅ OK (≥75%)", total_s-defaulters)
+    with k3: st.metric("⚠️ Defaulters", defaulters)
+    with k4: st.metric("📊 Avg Att.", f"{avg_pct}%")
     st.markdown("---")
 
-    #  Full report HTML table 
+    # ── Full report HTML table ──
     _info_cols = ["Name","Roll No","PRN","Branch","Class"]
     _period_lbls = [c for c in df_disp.columns if c not in _info_cols + ["Att %","Status"]]
 
@@ -3828,15 +3566,13 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
             cells = f'<td style="padding:9px 12px;color:#e2e8f0;font-size:12px;white-space:nowrap;">{r["Name"]}</td>'
             cells += f'<td style="padding:9px 12px;color:#64748b;font-size:12px;">{r["Roll No"]}</td>'
             for c in _period_lbls:
-                v = r.get(c, " Absent")
+                v = r.get(c, "❌ Absent")
                 if "Present" in str(v):
-                    badge = f'<span style="background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;"> P</span>'
+                    badge = f'<span style="background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;">✅ P</span>'
                 elif "Late" in str(v):
                     badge = f'<span style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.25);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;">⏱ L</span>'
-                elif "E" in str(v) or "Excused" in str(v):
-                    badge = f'<span style="background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;"> E</span>'
                 else:
-                    badge = f'<span style="background:rgba(244,114,182,0.08);color:#f472b6;border:1px solid rgba(244,114,182,0.18);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;"> A</span>'
+                    badge = f'<span style="background:rgba(244,114,182,0.08);color:#f472b6;border:1px solid rgba(244,114,182,0.18);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;">❌ A</span>'
                 cells += f'<td style="padding:6px 12px;text-align:center;">{badge}</td>'
             att = r.get("Att %", "")
             sta = r.get("Status", "")
@@ -3855,13 +3591,13 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
             </table></div>
         </div>"""
 
-    st.markdown(_build_report_table(df_disp, df_disp.columns, " Complete Attendance Sheet", "#4f9eff"), unsafe_allow_html=True)
+    st.markdown(_build_report_table(df_disp, df_disp.columns, "📋 Complete Attendance Sheet", "#4f9eff"), unsafe_allow_html=True)
 
     if not df_def_disp.empty:
-        st.markdown(_build_report_table(df_def_disp, df_def_disp.columns, " Defaulters — Below 75%", "#f472b6"), unsafe_allow_html=True)
+        st.markdown(_build_report_table(df_def_disp, df_def_disp.columns, "⚠️ Defaulters — Below 75%", "#f472b6"), unsafe_allow_html=True)
     else:
         st.markdown("""<div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.18);border-radius:12px;padding:18px;text-align:center;margin-bottom:12px;">
-            <div style="font-size:22px;"></div><div style="color:#34d399;font-weight:700;font-size:13px;">No Defaulters!</div>
+            <div style="font-size:22px;">🎉</div><div style="color:#34d399;font-weight:700;font-size:13px;">No Defaulters!</div>
             <div style="color:#64748b;font-size:11px;margin-top:4px;">All students have ≥75% attendance</div></div>""", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -3876,8 +3612,8 @@ def _generate_and_show_report(scope_type: str, scope_value: str, selected_period
 
     fn_tag = scope_value.replace("-","_").replace(" ","_").lower()
     stype_tag = scope_type.lower().replace(" ","_")
-    st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:10px;"> Download Excel</p>', unsafe_allow_html=True)
-    st.download_button(" Download Full Attendance Report (.xlsx)", data=buf,
+    st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:10px;">📥 Download Excel</p>', unsafe_allow_html=True)
+    st.download_button("📥 Download Full Attendance Report (.xlsx)", data=buf,
         file_name=f"attendance_{stype_tag}_{fn_tag}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True, key=f"dl_full_{stype_tag}_{fn_tag}")
@@ -3919,7 +3655,7 @@ def show_ai_live_attendance_page():
     st.markdown("""
         <div style="margin-bottom:24px;">
             <h2 style="margin:0; font-size:28px; font-weight:900; background:linear-gradient(135deg,#34d399,#4f9eff); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-                 AI Live Attendance
+                🤖 AI Live Attendance
             </h2>
             <p style="color:#64748b; font-size:13px; margin:4px 0 0 0;">Real-time face recognition &amp; automated attendance logging</p>
         </div>
@@ -3939,19 +3675,19 @@ def show_ai_live_attendance_page():
     
     # ==================== LEFT COLUMN: CAMERA FEED & STATUS ====================
     with left_col:
-        st.markdown('<p class="section-label"> Live Camera Feed</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-label">📷 Live Camera Feed</p>', unsafe_allow_html=True)
         camera_placeholder = st.empty()
-        st.markdown('<p class="section-label" style="margin-top:16px;"> System Status</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-label" style="margin-top:16px;">📊 System Status</p>', unsafe_allow_html=True)
         status_placeholder = st.empty()
             
     # ==================== RIGHT COLUMN: CONTROLS & LOGS ====================
     with right_col:
-        st.markdown('<p class="section-label"> Control Panel</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-label">⚙️ Control Panel</p>', unsafe_allow_html=True)
         
         # Controls Group
         col_start, col_stop = st.columns(2)
         with col_start:
-            if st.button(" Start Recognition", disabled=is_running, use_container_width=True, type="primary", key="btn_start_rec"):
+            if st.button("▶ Start Recognition", disabled=is_running, use_container_width=True, type="primary", key="btn_start_rec"):
                 try:
                     if not is_running:
                         if st.session_state.recognition_engine is None:
@@ -3965,22 +3701,6 @@ def show_ai_live_attendance_page():
                         engine = st.session_state.recognition_engine
                         if hasattr(engine, 'latest_frame'):
                             engine.latest_frame = None
-                            
-                        # --- COORDINATION: Restrict AI to Timetable Class/Branch ---
-                        if "tt_settings" in st.session_state:
-                            tt_dept = st.session_state.tt_settings.get("department", "CSE(AI&ML)")
-                            tt_cls = st.session_state.tt_settings.get("class", "TY")
-                            if tt_dept.startswith("DEPARTMENT OF "):
-                                tt_dept = tt_dept.replace("DEPARTMENT OF ", "").strip()
-                        else:
-                            tt_dept = "CSE(AI&ML)"
-                            tt_cls = "TY"
-
-                        allowed_rolls = set(
-                            str(s.get("roll_no", "")) for s in st.session_state.students 
-                            if str(s.get("branch","")).strip() == tt_dept and str(s.get("class","")).strip() == tt_cls
-                        )
-                        engine.allowed_roll_nos = allowed_rolls
                         
                         def run_engine():
                             try:
@@ -4011,7 +3731,7 @@ def show_ai_live_attendance_page():
                     st.rerun()
                     
         # Capture Button
-        capture_btn = st.button(" Capture Unknown Face", disabled=not is_running, use_container_width=True, key="btn_cap_unk")
+        capture_btn = st.button("📸 Capture Unknown Face", disabled=not is_running, use_container_width=True, key="btn_cap_unk")
         if is_running and engine and hasattr(engine, 'latest_frame') and capture_btn:
             frame = engine.latest_frame
             if frame is not None:
@@ -4021,18 +3741,16 @@ def show_ai_live_attendance_page():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filepath = os.path.join(save_dir, f"unknown_{timestamp}.jpg")
                 cv2.imwrite(filepath, frame)
-                st.toast(f" Saved unknown face to {filepath}")
+                st.toast(f"✅ Saved unknown face to {filepath}")
                 
         detected_student_placeholder = st.empty()
-        exit_confirmation_placeholder = st.empty()
-        auto_carry_placeholder = st.empty()
         st.markdown("---")
         
         active_students_placeholder = st.empty()
         event_logs_placeholder = st.empty()
 
     # Dynamic Streaming Render Logic
-    def render_dashboard_state(update_buttons=True):
+    def render_dashboard_state():
         cur_engine = st.session_state.recognition_engine
         cur_is_running = st.session_state.recognition_running
         
@@ -4065,7 +3783,7 @@ def show_ai_live_attendance_page():
                     pass
             camera_placeholder.markdown("""
                 <div class="cam-offline-box">
-                    <div style="font-size:48px; margin-bottom:12px;"></div>
+                    <div style="font-size:48px; margin-bottom:12px;">📷</div>
                     <div style="font-size:16px; font-weight:700; color:#94a3b8; margin-bottom:6px;">Camera Offline</div>
                     <div style="font-size:13px; color:#475569;">Start the recognition engine using the controls on the right</div>
                 </div>
@@ -4108,7 +3826,7 @@ def show_ai_live_attendance_page():
                         st.markdown("""
                             <div class="compact-card" style="border-left: 5px solid #10b981; margin-top: 15px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-size: 18px;"></span>
+                                    <span style="font-size: 18px;">🎯</span>
                                     <strong style="color: #10b981; font-size: 15px;">Detected Student Live Info</strong>
                                 </div>
                             </div>
@@ -4134,7 +3852,7 @@ def show_ai_live_attendance_page():
                                 try:
                                     erp_record = cur_engine.attendance_engine.erp_data.get(today_str, {}).get(subj, {}).get(per_id, {}).get(roll_no)
                                     if erp_record:
-                                        st.caption(f" **{erp_record.get('status')}** logged at {erp_record.get('entry_time')}")
+                                        st.caption(f"✅ **{erp_record.get('status')}** logged at {erp_record.get('entry_time')}")
                                 except Exception:
                                     pass
                 else:
@@ -4144,123 +3862,27 @@ def show_ai_live_attendance_page():
         else:
             detected_student_placeholder.empty()
             
-        # 3.5 Check for Pending Exits
-        if update_buttons:
-            if cur_engine and hasattr(cur_engine, 'attendance_engine') and cur_engine.attendance_engine:
-                pending = getattr(cur_engine.attendance_engine, 'pending_exits', {})
-                if pending:
-                    # Process the first pending exit request
-                    r_no = list(pending.keys())[0]
-                    student_info = pending[r_no]
-                    with exit_confirmation_placeholder.container():
-                        st.markdown(f"""
-                            <div style="background:rgba(244,114,182,0.1); border:1px solid #f472b6; border-radius:12px; padding:16px; margin-bottom:16px; text-align:center;">
-                                <div style="color:#f472b6; font-weight:800; font-size:16px; margin-bottom:8px;">🚪 EXIT CONFIRMATION</div>
-                                <div style="color:#e2e8f0; font-size:14px; margin-bottom:12px;">Scan detected again. Do you want to checkout, <b style="color:#ffffff;">{student_info['name']}</b>?</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        ec1, ec2 = st.columns(2)
-                        with ec1:
-                            if st.button("✅ Confirm Exit", key=f"confirm_exit_{r_no}", use_container_width=True, type="primary"):
-                                cur_engine.attendance_engine.confirm_exit(r_no)
-                                st.rerun()
-                        with ec2:
-                            if st.button("❌ Cancel", key=f"cancel_exit_{r_no}", use_container_width=True):
-                                cur_engine.attendance_engine.cancel_exit(r_no)
-                                st.rerun()
-                else:
-                    exit_confirmation_placeholder.empty()
-            else:
-                exit_confirmation_placeholder.empty()
-            
-        # 3.6 Check for Pending Auto Carries
-        if update_buttons:
-            if cur_engine and hasattr(cur_engine, 'attendance_engine') and cur_engine.attendance_engine:
-                pending_ac = getattr(cur_engine.attendance_engine, 'pending_auto_carries', {})
-                if pending_ac:
-                    with auto_carry_placeholder.container():
-                        st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#34d399;margin-bottom:8px;"> Pending Auto-Carry Verifications</p>', unsafe_allow_html=True)
-                        
-                        # Display Table of Pending Students
-                        table_html = "<div style='background:rgba(52,211,153,0.05);border:1px solid rgba(52,211,153,0.2);border-radius:14px;overflow:hidden;margin-bottom:16px;'>"
-                        table_html += "<table style='width:100%;border-collapse:collapse;font-family:Inter,sans-serif;'>"
-                        table_html += "<thead><tr style='background:rgba(52,211,153,0.1);'>"
-                        table_html += "<th style='padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:#34d399;text-align:left;border-bottom:1px solid rgba(52,211,153,0.2);'>Roll No</th>"
-                        table_html += "<th style='padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:#34d399;text-align:left;border-bottom:1px solid rgba(52,211,153,0.2);'>Name</th>"
-                        table_html += "<th style='padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;color:#34d399;text-align:right;border-bottom:1px solid rgba(52,211,153,0.2);'>Target Subject</th>"
-                        table_html += "</tr></thead><tbody>"
-                        for i, (r_no, data) in enumerate(pending_ac.items()):
-                            bg = "rgba(52,211,153,0.02)" if i % 2 == 0 else "transparent"
-                            name = data.get("name", "Unknown")
-                            new_subj = data.get("new_subject", "")
-                            table_html += f"<tr style='background:{bg};border-bottom:1px solid rgba(52,211,153,0.05);'>"
-                            table_html += f"<td style='padding:8px 14px;color:#94a3b8;font-size:12px;font-weight:600;'>{r_no}</td>"
-                            table_html += f"<td style='padding:8px 14px;color:#e2e8f0;font-size:13px;font-weight:600;'>{name}</td>"
-                            table_html += f"<td style='padding:8px 14px;color:#34d399;font-size:12px;font-weight:700;text-align:right;'>{new_subj}</td>"
-                            table_html += "</tr>"
-                        table_html += "</tbody></table></div>"
-                        st.markdown(table_html, unsafe_allow_html=True)
-
-                        # Process the first pending auto carry request
-                        r_no = list(pending_ac.keys())[0]
-                        student_info = pending_ac[r_no]
-                        st.markdown(f"""
-                            <div style="background:rgba(52,211,153,0.1); border:1px solid #34d399; border-radius:12px; padding:16px; margin-bottom:16px; text-align:center;">
-                                <div style="color:#e2e8f0; font-size:14px;">Is <b style="color:#ffffff;">{student_info['name']} ({r_no})</b> present for <b style="color:#ffffff;">{student_info['new_subject']}</b>?</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                        ac1, ac2 = st.columns(2)
-                        with ac1:
-                            if st.button("✅ Yes, Present", key=f"confirm_ac_{r_no}", use_container_width=True, type="primary"):
-                                cur_engine.attendance_engine.confirm_auto_carry(r_no)
-                                st.rerun()
-                        with ac2:
-                            if st.button("❌ No, Absent", key=f"cancel_ac_{r_no}", use_container_width=True):
-                                cur_engine.attendance_engine.cancel_auto_carry(r_no)
-                                st.rerun()
-                else:
-                    auto_carry_placeholder.empty()
-            else:
-                auto_carry_placeholder.empty()
-            
         # 4. Update Active Students and logs
         if cur_engine and hasattr(cur_engine, 'attendance_engine') and cur_engine.attendance_engine:
             active_students_dict = cur_engine.attendance_engine.active_students
             with active_students_placeholder.container():
-                st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:8px;"> In-Class Active Students</p>', unsafe_allow_html=True)
+                st.markdown("**👥 Active Students**")
                 if active_students_dict:
-                    table_html = "<div style='background:rgba(12,17,33,0.85);border:1px solid rgba(79,158,255,0.1);border-radius:14px;overflow:hidden;margin-bottom:20px;'>"
-                    table_html += "<table style='width:100%;border-collapse:collapse;font-family:Inter,sans-serif;'>"
-                    table_html += "<thead><tr style='background:rgba(6,9,18,0.5);'>"
-                    table_html += "<th style='padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;text-align:left;border-bottom:2px solid rgba(255,255,255,0.06);'>Roll No</th>"
-                    table_html += "<th style='padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;text-align:left;border-bottom:2px solid rgba(255,255,255,0.06);'>Name</th>"
-                    table_html += "<th style='padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;text-align:center;border-bottom:2px solid rgba(255,255,255,0.06);'>Period</th>"
-                    table_html += "<th style='padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#4f9eff;text-align:right;border-bottom:2px solid rgba(79,158,255,0.18);'>Entry Time</th>"
-                    table_html += "</tr></thead><tbody>"
-                    for i, (r_no, data) in enumerate(active_students_dict.items()):
-                        bg = "rgba(255,255,255,0.015)" if i % 2 == 0 else "transparent"
+                    active_data = []
+                    for r_no, data in active_students_dict.items():
                         e_time = data.get("entry_time")
                         e_time_str = e_time.strftime("%H:%M:%S") if isinstance(e_time, datetime) else str(e_time)
-                        name = data.get("name", "Unknown")
-                        per = data.get("current_period", "-")
-                        subj = data.get("current_subject", "-")
-                        table_html += f"<tr style='background:{bg};border-bottom:1px solid rgba(255,255,255,0.03);'>"
-                        table_html += f"<td style='padding:10px 14px;color:#94a3b8;font-size:12px;font-weight:600;'>{r_no}</td>"
-                        table_html += f"<td style='padding:10px 14px;color:#e2e8f0;font-size:13px;font-weight:600;'>{name}</td>"
-                        table_html += f"<td style='padding:10px 14px;color:#64748b;font-size:12px;text-align:center;'>{subj} [{per}]</td>"
-                        table_html += f"<td style='padding:10px 14px;color:#4f9eff;font-size:12px;font-weight:700;text-align:right;font-family:\"JetBrains Mono\",monospace;'>{e_time_str}</td>"
-                        table_html += "</tr>"
-                    table_html += "</tbody></table></div>"
-                    st.markdown(table_html, unsafe_allow_html=True)
+                        active_data.append({
+                            "Roll No": r_no,
+                            "Name": data.get("name", "Unknown"),
+                            "Entry": e_time_str
+                        })
+                    st.dataframe(pd.DataFrame(active_data), use_container_width=True, hide_index=True)
                 else:
-                    st.markdown("""
-                        <div style="background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.1);border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;">
-                            <div style="color:#64748b;font-size:13px;font-weight:600;">No active students currently detected in class.</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.info("No active students currently detected in class.")
                     
             with event_logs_placeholder.container():
-                st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:8px;"> Live System Logs</p>', unsafe_allow_html=True)
+                st.markdown('<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:8px;">📝 Live Attendance Events</p>', unsafe_allow_html=True)
                 events = cur_engine.attendance_engine.event_logs
                 if events:
                     for event in reversed(events[-6:]):
@@ -4269,39 +3891,30 @@ def show_ai_live_attendance_page():
                         subj = event.get('subject', '')
                         per_id = event.get('period', '')
                         e_time = event.get('time', '')
-                        period_info = f" &bull; {subj} [{per_id}]" if subj else ""
-                        time_info = f" &bull; {e_time}" if e_time else ""
-                        
+                        period_info = f" · {subj} [{per_id}]" if subj else ""
+                        time_info = f" · {e_time}" if e_time else ""
                         if e_type == 'ENTRY':
                             st.markdown(f"""
-                                <div style="background:linear-gradient(90deg, rgba(52,211,153,0.1) 0%, transparent 100%);border-left:3px solid #34d399;border-radius:6px;padding:8px 12px;margin-bottom:6px;">
-                                    <span style="color:#34d399;font-weight:800;font-size:11px;letter-spacing:0.05em;margin-right:8px;">PRESENT</span>
-                                    <span style="color:#ffffff;font-size:13px;font-weight:600;">{name}</span>
-                                    <span style="color:#64748b;font-size:11px;margin-left:6px;">{period_info}{time_info}</span>
+                                <div style="background:rgba(52,211,153,0.1);border-left:3px solid #34d399;border-radius:8px;padding:8px 12px;margin-bottom:6px;">
+                                    <span style="color:#34d399;font-weight:700;font-size:12px;">✅ PRESENT</span>
+                                    <span style="color:#ffffff;font-size:13px;font-weight:600;"> {name}</span>
+                                    <span style="color:#64748b;font-size:11px;">{period_info}{time_info}</span>
                                 </div>
                             """, unsafe_allow_html=True)
                         elif e_type == 'LATE':
                             st.markdown(f"""
-                                <div style="background:linear-gradient(90deg, rgba(251,146,60,0.1) 0%, transparent 100%);border-left:3px solid #fb923c;border-radius:6px;padding:8px 12px;margin-bottom:6px;">
-                                    <span style="color:#fb923c;font-weight:800;font-size:11px;letter-spacing:0.05em;margin-right:8px;">LATE</span>
-                                    <span style="color:#ffffff;font-size:13px;font-weight:600;">{name}</span>
-                                    <span style="color:#64748b;font-size:11px;margin-left:6px;">{period_info}{time_info}</span>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        elif e_type == 'AUTO-CARRY':
-                            st.markdown(f"""
-                                <div style="background:linear-gradient(90deg, rgba(168,85,247,0.1) 0%, transparent 100%);border-left:3px solid #a855f7;border-radius:6px;padding:8px 12px;margin-bottom:6px;">
-                                    <span style="color:#a855f7;font-weight:800;font-size:11px;letter-spacing:0.05em;margin-right:8px;">AUTO-CARRIED</span>
-                                    <span style="color:#ffffff;font-size:13px;font-weight:600;">{name}</span>
-                                    <span style="color:#64748b;font-size:11px;margin-left:6px;">{period_info}{time_info}</span>
+                                <div style="background:rgba(251,146,60,0.1);border-left:3px solid #fb923c;border-radius:8px;padding:8px 12px;margin-bottom:6px;">
+                                    <span style="color:#fb923c;font-weight:700;font-size:12px;">⏱️ LATE</span>
+                                    <span style="color:#ffffff;font-size:13px;font-weight:600;"> {name}</span>
+                                    <span style="color:#64748b;font-size:11px;">{period_info}{time_info}</span>
                                 </div>
                             """, unsafe_allow_html=True)
                         elif e_type == 'EXIT':
                             st.markdown(f"""
-                                <div style="background:linear-gradient(90deg, rgba(244,114,182,0.1) 0%, transparent 100%);border-left:3px solid #f472b6;border-radius:6px;padding:8px 12px;margin-bottom:6px;">
-                                    <span style="color:#f472b6;font-weight:800;font-size:11px;letter-spacing:0.05em;margin-right:8px;">EXIT</span>
-                                    <span style="color:#ffffff;font-size:13px;font-weight:600;">{name}</span>
-                                    <span style="color:#64748b;font-size:11px;margin-left:6px;">{period_info}{time_info}</span>
+                                <div style="background:rgba(100,116,139,0.1);border-left:3px solid #64748b;border-radius:8px;padding:8px 12px;margin-bottom:6px;">
+                                    <span style="color:#94a3b8;font-weight:700;font-size:12px;">🚶 EXIT</span>
+                                    <span style="color:#ffffff;font-size:13px;font-weight:600;"> {name}</span>
+                                    <span style="color:#64748b;font-size:11px;">{period_info}{time_info}</span>
                                 </div>
                             """, unsafe_allow_html=True)
                         else:
@@ -4311,42 +3924,29 @@ def show_ai_live_attendance_page():
         else:
             active_students_placeholder.markdown("""
                 <div class="compact-card" style="text-align:center; padding:20px;">
-                    <div style="font-size:28px;"></div>
+                    <div style="font-size:28px;">👥</div>
                     <div style="color:#64748b; font-size:13px; margin-top:6px;">Start recognition to track active students</div>
                 </div>
             """, unsafe_allow_html=True)
             event_logs_placeholder.markdown("""
                 <div class="compact-card" style="text-align:center; padding:20px;">
-                    <div style="font-size:28px;"></div>
+                    <div style="font-size:28px;">📋</div>
                     <div style="color:#64748b; font-size:13px; margin-top:6px;">No events recorded yet</div>
                 </div>
             """, unsafe_allow_html=True)
 
     # Render Initial State
-    render_dashboard_state(update_buttons=True)
+    render_dashboard_state()
     
     # Run high-frequency, flicker-free local streaming loop inside python thread to eradicate page reloading
     if is_running:
-        cur_engine = st.session_state.recognition_engine
-        # Cache the initial pending counts
-        last_pending_exits = len(cur_engine.attendance_engine.pending_exits) if cur_engine and getattr(cur_engine, 'attendance_engine', None) else 0
-        last_pending_ac = len(cur_engine.attendance_engine.pending_auto_carries) if cur_engine and getattr(cur_engine, 'attendance_engine', None) else 0
-        
         while st.session_state.recognition_running:
-            cur_engine = st.session_state.recognition_engine
-            # Check for changes in pending queues
-            current_pending_exits = len(cur_engine.attendance_engine.pending_exits) if cur_engine and getattr(cur_engine, 'attendance_engine', None) else 0
-            current_pending_ac = len(cur_engine.attendance_engine.pending_auto_carries) if cur_engine and getattr(cur_engine, 'attendance_engine', None) else 0
-            
-            if current_pending_exits != last_pending_exits or current_pending_ac != last_pending_ac:
-                st.rerun()  # Forces a full UI refresh to render the new buttons safely
-                
-            render_dashboard_state(update_buttons=False)
+            render_dashboard_state()
             time.sleep(0.04)  # High performance 25 FPS update rate without any global reruns!
 
 def show_ai_add_student_page():
     """Display the AI Student Dataset Collection page."""
-    st.title(" AI Add Student (Dataset Collector)")
+    st.title("🤖 AI Add Student (Dataset Collector)")
     st.markdown("Use this panel to capture high-quality face images for the AI recognition engine.")
     
     with st.form("add_student_form"):
@@ -4360,7 +3960,7 @@ def show_ai_add_student_page():
         with col4:
             student_class = st.selectbox("Class", ["FY", "SY", "TY", "B.Tech", "FY B.Tech", "SY B.Tech", "TY B.Tech"])
             
-        st.markdown("###  Capture Face Image")
+        st.markdown("### 📷 Capture Face Image")
         st.info("Please look directly at the camera. Ensure good lighting and a clear background.")
         
         # Streamlit native camera input
@@ -4369,11 +3969,6 @@ def show_ai_add_student_page():
         submit = st.form_submit_button("Save Student Data", type="primary", use_container_width=True)
         
         if submit:
-            # Strip trailing and leading whitespaces for clean data
-            name = name.strip() if name else ""
-            roll_no = roll_no.strip() if roll_no else ""
-            prn = prn.strip() if prn else ""
-            
             if not name or not roll_no:
                 st.error("Name and Roll Number are required fields.")
             elif camera_photo is None:
@@ -4409,7 +4004,7 @@ def show_ai_add_student_page():
                     cv2.imwrite(filepath, resized_img, [cv2.IMWRITE_JPEG_QUALITY, 100])
                     
                     # Success message
-                    st.success(f" Successfully added student: {name}")
+                    st.success(f"✅ Successfully added student: {name}")
                     st.info(f"Image saved at 1000x1000px resolution in `{filepath}`.")
                     
                     # Also save metadata if PRN is provided
@@ -4417,35 +4012,16 @@ def show_ai_add_student_page():
                     with open(meta_path, 'w') as f:
                         json.dump({"name": name, "roll_no": roll_no, "prn": prn, "class": student_class, "added_on": timestamp}, f)
                     
-                    st.info(" Generating AI Face Embeddings... This may take a moment.")
+                    st.info("🔄 Generating AI Face Embeddings... This may take a moment.")
                     from vision.generate_embeddings import generate_face_embeddings
                     result = generate_face_embeddings(verbose=False)
                     
                     if result.get('status') in ['success', 'partial_success']:
-                        st.success(" AI Embeddings updated successfully! The student will now be recognized.")
-                        # Hot-reload embeddings if the engine is currently running,
-                        # otherwise cleanly stop the old thread and reset.
-                        existing_engine = st.session_state.get('recognition_engine')
-                        if existing_engine is not None:
-                            if st.session_state.get('recognition_running', False):
-                                # Engine is live — hot-reload without stopping
-                                try:
-                                    existing_engine.reload_embeddings()
-                                    st.info(" Embeddings reloaded into running engine. No restart needed.")
-                                except Exception as _re:
-                                    st.warning(f"Hot-reload failed ({_re}). Stopping engine for clean restart.")
-                                    if hasattr(existing_engine, 'cam_running'):
-                                        existing_engine.cam_running = False
-                                    st.session_state.recognition_running = False
-                                    st.session_state.recognition_engine = None
-                            else:
-                                # Engine exists but is stopped — just clear it so next Start
-                                # picks up fresh embeddings
-                                st.session_state.recognition_engine = None
-                        else:
-                            st.session_state.recognition_engine = None
+                        st.success("✅ AI Embeddings updated successfully! The student will now be recognized.")
+                        # Force a reset of the engine so it reloads the new embeddings
+                        st.session_state.recognition_engine = None
                     else:
-                        st.error(f" Warning: Failed to generate embeddings: {result.get('error', 'Unknown Error')}")
+                        st.error(f"⚠️ Warning: Failed to generate embeddings: {result.get('error', 'Unknown Error')}")
                         
                 except Exception as e:
                     st.error(f"Failed to process image: {e}")
@@ -4463,7 +4039,7 @@ def main():
     st.markdown("""
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 15px;">
             <div style="display: flex; align-items: center; gap: 15px;">
-                <span style="font-size: 38px; filter: drop-shadow(0 0 10px rgba(167, 139, 250, 0.4));"></span>
+                <span style="font-size: 38px; filter: drop-shadow(0 0 10px rgba(167, 139, 250, 0.4));">🤖</span>
                 <h1 style="margin: 0; font-size: 34px; font-weight: 900; letter-spacing: -0.04em; background: linear-gradient(135deg, #4f9eff 0%, #a78bfa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AttendAI</h1>
             </div>
             <div style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 30px; padding: 6px 16px;">
@@ -4484,14 +4060,14 @@ def main():
         "Dashboard",
         "Manage Students",
         "Timetable",
-        " AI Live Attendance",
-        " Reports"
+        "🤖 AI Live Attendance",
+        "📊 Reports"
     ]
     
     current_page = st.session_state.get('page', 'Dashboard')
     
     col1, col2, col3, col4, col5 = st.columns(5)
-    icons = ["", "", "", "", ""]
+    icons = ["📊", "👥", "📅", "🤖", "📈"]
     
     for idx, (p, ic) in enumerate(zip(page_options, icons)):
         with [col1, col2, col3, col4, col5][idx]:
@@ -4508,8 +4084,8 @@ def main():
         "Dashboard": show_dashboard,
         "Manage Students": show_manage_students,
         "Timetable": show_timetable,
-        " AI Live Attendance": show_ai_live_attendance_page,
-        " Reports": show_reports_page,
+        "🤖 AI Live Attendance": show_ai_live_attendance_page,
+        "📊 Reports": show_reports_page,
     }
     
     page_function = page_routing.get(st.session_state.page, show_dashboard)

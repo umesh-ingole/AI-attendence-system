@@ -1,46 +1,21 @@
-# Python
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-
-# Virtual environments
+*.pyc
 .venv/
 venv/
 env/
+.env
 
-# Streamlit
-.streamlit/secrets.toml
+# Streamlit specific
+.streamlit/
+!.streamlit/config.toml
 
-# Large model files (downloaded automatically at runtime)
-.insightface/
+# Dataset directories
+dataset/*
+!dataset/.gitkeep
 
-# Student dataset photos (private)
-dataset/
-
-# Compiled embeddings (regenerated from dataset)
-data/face_embeddings.pkl
-
-# Local runtime data (created fresh on each deploy)
-data/erp_attendance.json
-data.json
-
-# Logs
+# Ignore large log files but keep them tracked if needed
 *.log
-embedding_generation.log
 
-# IDE
-.idea/
-.vscode/
-*.swp
-
-# OS
+# Ignore OS files
 .DS_Store
 Thumbs.db
-
-# Wheel files
-*.whl

@@ -1,72 +1,28 @@
 {
-  "students": [],
-  "period_attendance": [
-    {
-      "date": "2026-05-06",
-      "day": "Monday",
-      "period": "P1",
-      "subject": "AML",
-      "type": "lecture",
-      "attendance": {
-        "2": "Present",
-        "3": "Present",
-        "1223": "Late",
-        "123": "Present"
-      }
-    },
-    {
-      "date": "2026-05-06",
-      "day": "Monday",
-      "period": "P2",
-      "subject": "math",
-      "type": "lecture",
-      "attendance": {
-        "2": "Present",
-        "3": "Present",
-        "123": "Present"
-      }
-    },
-    {
-      "date": "2026-05-07",
-      "day": "Monday",
-      "period": "P1",
-      "subject": "AML",
-      "type": "lecture",
-      "attendance": {
-        "AI3046": "Present"
-      }
-    },
-    {
-      "date": "2026-05-07",
-      "day": "Monday",
-      "period": "P3",
-      "subject": "DL",
-      "type": "lecture",
-      "attendance": {
-        "2": "Present",
-        "123": "Present",
-        "3": "Present",
-        "AI3046": "Present",
-        "1223": "Present"
-      }
-    },
-    {
-      "date": "2026-05-08",
-      "day": "Friday",
-      "period": "test2",
-      "subject": "math",
-      "type": "lecture",
-      "attendance": {
-        "46": "Present"
-      }
+    "students": [],
+    "period_attendance": [],
+    "timetable": {
+        "Monday": [],
+        "Tuesday": [],
+        "Wednesday": [],
+        "Thursday": [],
+        "Friday": [],
+        "Saturday": [],
+        "2026-05-10": [
+            {
+                "period": "I",
+                "type": "lecture",
+                "subject": "Math",
+                "start_time": "21:50",
+                "end_time": "22:10"
+            },
+            {
+                "period": "II",
+                "type": "lecture",
+                "subject": "Math2",
+                "start_time": "22:10",
+                "end_time": "22:25"
+            }
+        ]
     }
-  ],
-  "timetable": {
-    "Monday": [],
-    "Tuesday": [],
-    "Wednesday": [],
-    "Thursday": [],
-    "Friday": [],
-    "Saturday": []
-  }
 }
