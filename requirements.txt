@@ -7,3 +7,5 @@ onnxruntime>=1.16.3
 opencv-python-headless>=4.8.1.78
 numpy<2.0.0
 setuptools
+streamlit-webrtc>=0.47.1
+av>=10.0.0

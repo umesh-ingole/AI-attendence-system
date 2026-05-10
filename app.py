@@ -14,6 +14,8 @@ import threading
 import time
 from io import BytesIO
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import av
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
 
 # ============================================================================
@@ -3941,6 +3943,29 @@ def show_ai_live_attendance_page():
     with left_col:
         st.markdown('<p class="section-label"> Live Camera Feed</p>', unsafe_allow_html=True)
         camera_placeholder = st.empty()
+        
+        # Dynamically initialize WebRTC Streamer if engine started
+        if is_running and engine:
+            # Frame callback to bridge video to local memory engine reference
+            def callback(frame: av.VideoFrame) -> av.VideoFrame:
+                img = frame.to_ndarray(format="bgr24")
+                processed = engine.process_frame(img)
+                if processed is None:
+                    return frame
+                return av.VideoFrame.from_ndarray(processed, format="bgr24")
+
+            with camera_placeholder.container():
+                webrtc_streamer(
+                    key="attendance_webrtc",
+                    mode=WebRtcMode.SENDRECV,
+                    rtc_configuration=RTCConfiguration(
+                        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+                    ),
+                    video_frame_callback=callback,
+                    media_stream_constraints={"video": True, "audio": False},
+                    async_processing=True,
+                )
+
         st.markdown('<p class="section-label" style="margin-top:16px;"> System Status</p>', unsafe_allow_html=True)
         status_placeholder = st.empty()
             
@@ -3982,19 +4007,9 @@ def show_ai_live_attendance_page():
                         )
                         engine.allowed_roll_nos = allowed_rolls
                         
-                        def run_engine():
-                            try:
-                                engine.start_recognition()
-                            except Exception as e:
-                                print(f"Engine Error: {e}")
-                        
-                        from streamlit.runtime.scriptrunner import add_script_run_ctx
-                        thread = threading.Thread(target=run_engine, daemon=True)
-                        add_script_run_ctx(thread)
-                        thread.start()
-                        
                         st.session_state.recognition_running = True
                         st.rerun()
+
                 except Exception as e:
                     st.error(f"Failed to start: {str(e)}")
                     
@@ -4047,22 +4062,18 @@ def show_ai_live_attendance_page():
         
         # 1. Update Camera Placeholder
         if cur_is_running:
-            frame = getattr(cur_engine, 'latest_frame', None)
-            if frame is not None:
-                import cv2
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                st.session_state.last_success_frame = rgb_frame
-                camera_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
-            elif 'last_success_frame' in st.session_state:
-                camera_placeholder.image(st.session_state.last_success_frame, channels="RGB", use_container_width=True)
-            else:
-                camera_placeholder.warning("⏳ Camera is starting up... Please stand in front of the lens.")
+            # In WebRTC mode, the stream handles itself in the placeholder.
+            # We only use the image placeholder temporarily if we needed dynamic image overriding,
+            # but WebRTC provides immediate in-stream rendering now. 
+            # We just make sure the last_success_frame stays clean
+            pass
         else:
             if 'last_success_frame' in st.session_state:
                 try:
                     del st.session_state.last_success_frame
                 except KeyError:
                     pass
+            # Re-draw the offline UI box only if camera isn't occupied by Streamer
             camera_placeholder.markdown("""
                 <div class="cam-offline-box">
                     <div style="font-size:48px; margin-bottom:12px;"></div>
@@ -4070,6 +4081,7 @@ def show_ai_live_attendance_page():
                     <div style="font-size:13px; color:#475569;">Start the recognition engine using the controls on the right</div>
                 </div>
             """, unsafe_allow_html=True)
+
             
         # 2. Update System Metrics
         active_count = 0

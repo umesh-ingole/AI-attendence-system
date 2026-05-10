@@ -149,6 +149,12 @@ class RealTimeFaceRecognitionEngine:
         self.fps = 0.0
         self.allowed_roll_nos = None
         
+        # Internal caching state for discrete frame processing (WebRTC support)
+        self.cached_faces = []
+        self.cached_recognition_results = {}
+        self.latest_frame = None
+        self.latest_raw_frame = None
+        
         logger.info(f"Configuration: threshold={self.similarity_threshold}, cooldown={self.recognition_cooldown}s")
         logger.info("=" * 60)
     
@@ -473,7 +479,120 @@ class RealTimeFaceRecognitionEngine:
                            font, 0.6, (255, 255, 255), 1)
         
         return frame
-    
+
+    def process_frame(self, frame: np.ndarray, frame_resize_scale: float = 0.35) -> np.ndarray:
+        """
+        Process a single frame, run inference, update attendance, and return overlayed frame.
+        Designed for WebRTC callback and step-by-step processing.
+        
+        Args:
+            frame: The raw camera frame (numpy BGR array)
+            frame_resize_scale: Scaling factor for inference
+        
+        Returns:
+            Processed frame with UI overlays
+        """
+        if frame is None:
+            return None
+            
+        self.latest_raw_frame = frame
+        
+        # 1. Performance-optimized inference throttling (Run heavy inference every 4th frame)
+        self.frame_count += 1
+        run_inference = (self.frame_count % 4 == 0) or (self.frame_count == 1)
+        
+        # Auto-marking for active students (every 30 seconds)
+        current_time = time.time()
+        if self.attendance_engine and (current_time - self.last_auto_mark_time >= 30):
+            try:
+                self.attendance_engine.trigger_auto_transition()
+                self.last_auto_mark_time = current_time
+            except Exception as e:
+                logger.debug(f"Auto-transition error during frame processing: {e}")
+        
+        display_frame = frame.copy()
+        
+        if run_inference:
+            # Prep inference frame
+            if frame_resize_scale < 1.0:
+                inference_frame = cv2.resize(
+                    frame,
+                    (int(frame.shape[1] * frame_resize_scale),
+                     int(frame.shape[0] * frame_resize_scale))
+                )
+            else:
+                inference_frame = frame
+                
+            # Detect faces using InsightFace
+            try:
+                faces = self.face_analyzer.get(inference_frame)
+            except Exception as e:
+                logger.debug(f"Face detection error: {e}")
+                faces = []
+                
+            recognition_results = {}
+            
+            for idx, face in enumerate(faces):
+                try:
+                    face_embedding = face.embedding
+                    match = self.match_face(face_embedding)
+                    
+                    if match:
+                        self.last_detected_student = match
+                        current_t = time.time()
+                        self.last_detected_time = current_t
+                        roll_no = match['roll_no']
+                        
+                        # Intentional Dwell Time Logic
+                        if roll_no not in self.dwell_tracker:
+                            self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
+                        else:
+                            if current_t - self.dwell_tracker[roll_no]['last_seen'] > 2.0:
+                                self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
+                            else:
+                                self.dwell_tracker[roll_no]['last_seen'] = current_t
+                                
+                        dwell_time = current_t - self.dwell_tracker[roll_no]['first_seen']
+                        recognition_results[idx] = match
+                        
+                        if dwell_time >= self.dwell_threshold:
+                            if self._should_recognize(roll_no):
+                                if self.attendance_engine:
+                                    if self.allowed_roll_nos is not None and match['roll_no'] not in self.allowed_roll_nos:
+                                        self.feedback_text = "⚠ Wrong Class/Branch"
+                                        self.feedback_expiry = time.time() + 2.0
+                                    else:
+                                        try:
+                                            self.attendance_engine.process_recognition_event(
+                                                roll_no=match['roll_no'],
+                                                name=match['name']
+                                            )
+                                            self.feedback_text = "✓ Attendance Logged"
+                                            self.feedback_expiry = time.time() + 2.0
+                                        except Exception as e:
+                                            logger.error(f"Attendance processing error: {e}")
+                except Exception as e:
+                    logger.debug(f"Processing error: {e}")
+                    continue
+                    
+            if frame_resize_scale < 1.0:
+                for face in faces:
+                    face.bbox = face.bbox / frame_resize_scale
+                    
+            self.cached_faces = faces
+            self.cached_recognition_results = recognition_results
+        else:
+            faces = self.cached_faces
+            recognition_results = self.cached_recognition_results
+            
+        # Update FPS and Draw Overlays
+        self._calculate_fps()
+        display_frame = self._draw_face_boxes(display_frame, faces, recognition_results)
+        display_frame = self._draw_ui_overlay(display_frame, len(faces))
+        
+        self.latest_frame = display_frame
+        return display_frame
+
     def start_recognition(self, camera_index: int = 0,
                          frame_resize_scale: float = 0.35,
                          show_window: bool = False) -> None:
@@ -549,11 +668,6 @@ class RealTimeFaceRecognitionEngine:
         
         last_processed_frame = None
         
-        # Performance boosting variables for frame skipping
-        frame_counter = 0
-        cached_faces = []
-        cached_recognition_results = {}
-        
         try:
             while self.cam_running:
                 frame = self.latest_raw_frame
@@ -564,133 +678,9 @@ class RealTimeFaceRecognitionEngine:
                 
                 last_processed_frame = frame
                 
-                # Create a copy for display and resize for inference
-                display_frame = frame.copy()
+                # Utilize refactored discrete process_frame method
+                display_frame = self.process_frame(frame, frame_resize_scale=frame_resize_scale)
                 
-                if frame_resize_scale < 1.0:
-                    inference_frame = cv2.resize(
-                        frame,
-                        (int(frame.shape[1] * frame_resize_scale),
-                         int(frame.shape[0] * frame_resize_scale))
-                    )
-                else:
-                    inference_frame = frame
-                
-                # Increment frame counter and determine if we should run heavy inference
-                frame_counter += 1
-                run_inference = (frame_counter % 4 == 0) or (frame_counter == 1)
-                
-                # Auto-marking for active students (every 30 seconds)
-                current_time = time.time()
-                if self.attendance_engine and (current_time - self.last_auto_mark_time >= 30):
-                    try:
-                        self.attendance_engine.trigger_auto_transition()
-                        self.last_auto_mark_time = current_time
-                    except Exception as e:
-                        logger.error(f"[ERROR] Auto-transition failed: {e}")
-                
-                if run_inference:
-                    # Detect faces using InsightFace
-                    try:
-                        faces = self.face_analyzer.get(inference_frame)
-                    except Exception as e:
-                        logger.debug(f"Face detection error: {e}")
-                        faces = []
-                    
-                    # Process each detected face
-                    recognition_results = {}
-                    
-                    for idx, face in enumerate(faces):
-                        try:
-                            # Get embedding for this face
-                            face_embedding = face.embedding
-                            
-                            # Match against known faces
-                            match = self.match_face(face_embedding)
-                            
-                            if match:
-                                self.last_detected_student = match
-                                current_t = time.time()
-                                self.last_detected_time = current_t
-                                roll_no = match['roll_no']
-                                
-                                # Intentional Dwell Time Logic
-                                if roll_no not in self.dwell_tracker:
-                                    self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
-                                else:
-                                    # If face lost for > 2 seconds, reset dwell time
-                                    if current_t - self.dwell_tracker[roll_no]['last_seen'] > 2.0:
-                                        self.dwell_tracker[roll_no] = {'first_seen': current_t, 'last_seen': current_t}
-                                    else:
-                                        self.dwell_tracker[roll_no]['last_seen'] = current_t
-                                
-                                dwell_time = current_t - self.dwell_tracker[roll_no]['first_seen']
-                                
-                                # Always show on display if matched
-                                recognition_results[idx] = match
-                                
-                                # Check if student should be recognized (Dwell met + cooldown)
-                                if dwell_time >= self.dwell_threshold:
-                                    if self._should_recognize(roll_no):
-                                        # Log recognition event
-                                        logger.info(
-                                            f"[RECOGNIZED] Name: {match['name']} | "
-                                            f"Roll: {match['roll_no']} | "
-                                            f"Similarity: {match['similarity']:.4f} | "
-                                            f"Dwell: {dwell_time:.1f}s | "
-                                            f"Time: {datetime.now().strftime('%H:%M:%S')}"
-                                        )
-
-                                        # Process Attendance Event
-                                        if self.attendance_engine:
-                                            # Strict Coordination: Only allow students from the active timetable's Class/Branch
-                                            if self.allowed_roll_nos is not None and match['roll_no'] not in self.allowed_roll_nos:
-                                                logger.info(f"[IGNORED] {match['name']} ({match['roll_no']}) does not belong to the active Timetable Class/Branch.")
-                                                self.feedback_text = "⚠ Wrong Class/Branch"
-                                                self.feedback_expiry = time.time() + 2.0
-                                            else:
-                                                try:
-                                                    self.attendance_engine.process_recognition_event(
-                                                        roll_no=match['roll_no'],
-                                                        name=match['name']
-                                                    )
-                                                    self.feedback_text = "✓ Attendance Logged"
-                                                    self.feedback_expiry = time.time() + 2.0
-                                                except Exception as e:
-                                                    logger.error(f"[ERROR] Attendance processing failed: {e}")
-                            
-                        except Exception as e:
-                            logger.debug(f"Error processing face {idx}: {e}")
-                            continue
-                    
-                    # Scale face boxes back to original frame size if resized
-                    if frame_resize_scale < 1.0:
-                        for face in faces:
-                            face.bbox = face.bbox / frame_resize_scale
-                            
-                    # Cache the results for skipped frames
-                    cached_faces = faces
-                    cached_recognition_results = recognition_results
-                else:
-                    # Reuse cached results on skipped frames to bypass expensive face analysis
-                    faces = cached_faces
-                    recognition_results = cached_recognition_results
-                
-                # Update FPS
-                self._calculate_fps()
-                
-                # Draw visual overlays on display frame
-                display_frame = self._draw_face_boxes(
-                    display_frame, faces, recognition_results
-                )
-                display_frame = self._draw_ui_overlay(
-                    display_frame, len(faces)
-                )
-                
-                # Store latest frame for Streamlit
-                self.latest_frame = display_frame
-                
-                # Display the frame (wrap in try/except for headless environments)
                 if show_window:
                     try:
                         cv2.imshow('Real-Time Face Recognition Engine', display_frame)
