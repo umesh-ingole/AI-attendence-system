@@ -3983,6 +3983,43 @@ def show_ai_live_attendance_page():
     with right_col:
         st.markdown('<p class="section-label"> Control Panel</p>', unsafe_allow_html=True)
         
+        # --- AI Engine Tuning & Configuration ---
+        st.markdown('<p class="section-label" style="margin-top:8px;"> AI Engine Configuration</p>', unsafe_allow_html=True)
+        conf_threshold = st.slider(
+            "Confidence Threshold",
+            min_value=0.30,
+            max_value=0.85,
+            value=0.48,
+            step=0.01,
+            help="Lower this threshold if your face is registered but not recognized due to network video compression or lighting."
+        )
+        ignore_constraints = st.checkbox(
+            "Recognize all students (Ignore Class/Branch filters)",
+            value=False,
+            help="Check this to allow the AI to recognize any student in your database regardless of the active period timetable."
+        )
+        
+        # Dynamically apply settings to engine if running
+        if engine:
+            engine.similarity_threshold = conf_threshold
+            if ignore_constraints:
+                engine.allowed_roll_nos = None
+            else:
+                if "tt_settings" in st.session_state:
+                    tt_dept = st.session_state.tt_settings.get("department", "CSE(AI&ML)")
+                    tt_cls = st.session_state.tt_settings.get("class", "TY")
+                    if tt_dept.startswith("DEPARTMENT OF "):
+                        tt_dept = tt_dept.replace("DEPARTMENT OF ", "").strip()
+                else:
+                    tt_dept = "CSE(AI&ML)"
+                    tt_cls = "TY"
+
+                allowed_rolls = set(
+                    str(s.get("roll_no", "")) for s in st.session_state.students 
+                    if str(s.get("branch","")).strip() == tt_dept and str(s.get("class","")).strip() == tt_cls
+                )
+                engine.allowed_roll_nos = allowed_rolls
+        
         # Controls Group
         col_start, col_stop = st.columns(2)
         with col_start:
@@ -3992,30 +4029,34 @@ def show_ai_live_attendance_page():
                         if st.session_state.recognition_engine is None:
                             try:
                                 from vision.face_recognition_engine import RealTimeFaceRecognitionEngine
-                                st.session_state.recognition_engine = RealTimeFaceRecognitionEngine()
+                                st.session_state.recognition_engine = RealTimeFaceRecognitionEngine(similarity_threshold=conf_threshold)
                             except ImportError as e:
                                 st.error(f"Missing dependency for AI Engine: {e}")
                                 st.stop()
                         
                         engine = st.session_state.recognition_engine
+                        engine.similarity_threshold = conf_threshold
                         if hasattr(engine, 'latest_frame'):
                             engine.latest_frame = None
                             
                         # --- COORDINATION: Restrict AI to Timetable Class/Branch ---
-                        if "tt_settings" in st.session_state:
-                            tt_dept = st.session_state.tt_settings.get("department", "CSE(AI&ML)")
-                            tt_cls = st.session_state.tt_settings.get("class", "TY")
-                            if tt_dept.startswith("DEPARTMENT OF "):
-                                tt_dept = tt_dept.replace("DEPARTMENT OF ", "").strip()
+                        if ignore_constraints:
+                            engine.allowed_roll_nos = None
                         else:
-                            tt_dept = "CSE(AI&ML)"
-                            tt_cls = "TY"
+                            if "tt_settings" in st.session_state:
+                                tt_dept = st.session_state.tt_settings.get("department", "CSE(AI&ML)")
+                                tt_cls = st.session_state.tt_settings.get("class", "TY")
+                                if tt_dept.startswith("DEPARTMENT OF "):
+                                    tt_dept = tt_dept.replace("DEPARTMENT OF ", "").strip()
+                            else:
+                                tt_dept = "CSE(AI&ML)"
+                                tt_cls = "TY"
 
-                        allowed_rolls = set(
-                            str(s.get("roll_no", "")) for s in st.session_state.students 
-                            if str(s.get("branch","")).strip() == tt_dept and str(s.get("class","")).strip() == tt_cls
-                        )
-                        engine.allowed_roll_nos = allowed_rolls
+                            allowed_rolls = set(
+                                str(s.get("roll_no", "")) for s in st.session_state.students 
+                                if str(s.get("branch","")).strip() == tt_dept and str(s.get("class","")).strip() == tt_cls
+                            )
+                            engine.allowed_roll_nos = allowed_rolls
                         
                         st.session_state.recognition_running = True
                         st.rerun()

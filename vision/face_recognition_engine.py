@@ -69,14 +69,14 @@ class RealTimeFaceRecognitionEngine:
     
     def __init__(self, 
                  embeddings_path: str = "data/face_embeddings.pkl",
-                 similarity_threshold: float = 0.55,
+                 similarity_threshold: float = 0.48,
                  recognition_cooldown: int = 10):
         """
         Initialize the face recognition engine.
         
         Args:
             embeddings_path: Path to pickled face embeddings dictionary
-            similarity_threshold: Minimum cosine similarity for recognition (default: 0.55)
+            similarity_threshold: Minimum cosine similarity for recognition (default: 0.48)
             recognition_cooldown: Cooldown period in seconds between recognitions (default: 10s)
         
         Raises:
